@@ -1,0 +1,249 @@
+'use client';
+
+import { useId, useRef, useState } from 'react';
+import { ImagePlus, Link2, Loader2, Trash2, Upload } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useToast } from '@/hooks/use-toast';
+
+export const MAX_UPLOAD_MB = 5;
+export const ACCEPTED_IMAGE_TYPES = 'image/png,image/jpeg,image/webp,image/gif,image/avif';
+
+/** Posts one file to the upload endpoint and returns its served URL. */
+export async function uploadImage(file: File): Promise<string> {
+  const body = new FormData();
+  body.append('file', file);
+
+  const response = await fetch('/api/admin/uploads', { method: 'POST', body });
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) throw new Error(data?.error || 'Upload failed.');
+  return data.url as string;
+}
+
+/**
+ * Single-image field: upload from the device, or paste a URL for artwork that
+ * already lives on a CDN. Both paths end up as the same string value.
+ */
+export function ImageUploader({
+  value,
+  onChange,
+  label = 'Image',
+  description,
+  required,
+  className,
+}: {
+  value: string;
+  onChange: (url: string) => void;
+  label?: string;
+  description?: string;
+  required?: boolean;
+  className?: string;
+}) {
+  const inputId = useId();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+  const [uploading, setUploading] = useState(false);
+  const [showUrl, setShowUrl] = useState(false);
+  const [dragging, setDragging] = useState(false);
+
+  const handleFile = async (file: File | undefined | null) => {
+    if (!file) return;
+
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      toast({
+        variant: 'destructive',
+        title: 'Image too large',
+        description: `Maximum size is ${MAX_UPLOAD_MB} MB.`,
+      });
+      return;
+    }
+
+    setUploading(true);
+    try {
+      onChange(await uploadImage(file));
+      toast({ title: 'Image uploaded' });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Upload failed', description: error?.message });
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  return (
+    <div className={cn('space-y-2', className)}>
+      <div className="flex items-center justify-between gap-2">
+        <Label htmlFor={inputId}>
+          {label}
+          {required && <span className="ml-0.5 text-destructive">*</span>}
+        </Label>
+        <button
+          type="button"
+          onClick={() => setShowUrl((v) => !v)}
+          className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+        >
+          <Link2 className="h-3 w-3" />
+          {showUrl ? 'Hide URL field' : 'Use a URL instead'}
+        </button>
+      </div>
+
+      {description && <p className="text-xs text-muted-foreground">{description}</p>}
+
+      {value ? (
+        <div className="flex items-center gap-3 rounded-md border border-border bg-secondary/40 p-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={value}
+            alt=""
+            className="h-16 w-16 rounded bg-card object-contain"
+            onError={(event) => {
+              (event.currentTarget as HTMLImageElement).style.opacity = '0.3';
+            }}
+          />
+          <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{value}</p>
+          <div className="flex shrink-0 gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={uploading}
+              onClick={() => fileRef.current?.click()}
+            >
+              Replace
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-destructive"
+              onClick={() => onChange('')}
+              aria-label="Remove image"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragging(false);
+            handleFile(event.dataTransfer.files?.[0]);
+          }}
+          disabled={uploading}
+          className={cn(
+            'flex w-full flex-col items-center gap-1.5 rounded-md border border-dashed px-4 py-6 text-center transition-colors',
+            dragging ? 'border-primary bg-primary/5' : 'border-border hover:bg-secondary/50',
+            uploading && 'opacity-60'
+          )}
+        >
+          {uploading ? (
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          ) : (
+            <ImagePlus className="h-5 w-5 text-muted-foreground" />
+          )}
+          <span className="text-sm font-medium">
+            {uploading ? 'Uploading…' : 'Choose a file or drop it here'}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            PNG, JPEG, WebP, GIF or AVIF · up to {MAX_UPLOAD_MB} MB
+          </span>
+        </button>
+      )}
+
+      <input
+        id={inputId}
+        ref={fileRef}
+        type="file"
+        accept={ACCEPTED_IMAGE_TYPES}
+        className="sr-only"
+        onChange={(event) => handleFile(event.target.files?.[0])}
+      />
+
+      {showUrl && (
+        <Input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="https://…/image.png"
+          className="text-sm"
+        />
+      )}
+    </div>
+  );
+}
+
+/** Upload button for flows that manage their own list of images. */
+export function ImageUploadButton({
+  onUploaded,
+  disabled,
+  label = 'Upload',
+}: {
+  onUploaded: (url: string) => void;
+  disabled?: boolean;
+  label?: string;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+  const [uploading, setUploading] = useState(false);
+
+  const handleFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+
+    try {
+      for (const file of Array.from(files)) {
+        if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+          toast({
+            variant: 'destructive',
+            title: `${file.name} is too large`,
+            description: `Maximum size is ${MAX_UPLOAD_MB} MB.`,
+          });
+          continue;
+        }
+        onUploaded(await uploadImage(file));
+      }
+      toast({ title: 'Upload complete' });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Upload failed', description: error?.message });
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={disabled || uploading}
+        onClick={() => fileRef.current?.click()}
+      >
+        {uploading ? (
+          <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+        ) : (
+          <Upload className="mr-1.5 h-4 w-4" />
+        )}
+        {label}
+      </Button>
+      <input
+        ref={fileRef}
+        type="file"
+        multiple
+        accept={ACCEPTED_IMAGE_TYPES}
+        className="sr-only"
+        onChange={(event) => handleFiles(event.target.files)}
+      />
+    </>
+  );
+}

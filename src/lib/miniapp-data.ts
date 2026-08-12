@@ -249,7 +249,7 @@ export async function getAuctionByCode(code: string) {
           status: auction.winner.status,
           displayName:
             auction.winner.bidder.fullName ||
-            (showPhone ? maskPhoneLocal(auction.winner.bidder.phoneNumber) : 'A HowLow bidder'),
+            (showPhone ? maskPhoneLocal(auction.winner.bidder.phoneNumber) : 'A GuessLow bidder'),
         }
       : null,
     settled: auction.status === 'SETTLED',

@@ -15,7 +15,8 @@ function parseImageList(value: unknown): string[] {
   return raw
     .map((v) => String(v).trim())
     .filter(Boolean)
-    .filter((url) => /^https?:\/\//i.test(url) || url.startsWith('data:image/'))
+    // Absolute remote URLs, or a path served from our own /uploads folder.
+    .filter((url) => /^https?:\/\//i.test(url) || url.startsWith('/uploads/'))
     .slice(0, 10);
 }
 

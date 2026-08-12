@@ -11,9 +11,9 @@ export const LANGUAGES: { value: Language; label: string; short: string }[] = [
 ];
 
 const dictionary = {
-  'app.name': { en: 'HowLow', am: 'HowLow' },
+  'app.name': { en: 'GuessLow', am: 'GuessLow' },
   'app.tagline': { en: 'Bid Low! Win Big!', am: 'ዝቅ ብለው ይጫረቱ! ትልቅ ያሸንፉ!' },
-  'app.platform': { en: 'HowLow Auction Platform', am: 'የHowLow ጨረታ መድረክ' },
+  'app.platform': { en: 'GuessLow Auction Platform', am: 'የGuessLow ጨረታ መድረክ' },
 
   'nav.home': { en: 'Home', am: 'መነሻ' },
   'nav.auctions': { en: 'Auctions', am: 'ጨረታዎች' },
@@ -35,8 +35,8 @@ const dictionary = {
   },
   'home.howItWorks': { en: 'How It Works', am: 'እንዴት እንደሚሰራ' },
   'home.description': {
-    en: 'HOWLOW is a Lowest Unique Bid Auction where the participant who submits the lowest unique bid wins. For instance, if ETB 1.00 is submitted twice, ETB 2.00 once, ETB 3.00 twice, and ETB 4.00 once, the lowest unique bid is ETB 2.00, so it wins. However, it is important to note that the lowest bid does not always win; only the lowest and unique bid wins. Bidders can submit different amounts up to 100 times for a single auction. Win premium items at a fraction of their actual price.',
-    am: 'HOWLOW ዝቅተኛውን ልዩ ጨረታ ያቀረበ ተሳታፊ የሚያሸንፍበት የጨረታ መድረክ ነው። ለምሳሌ፣ ብር 1.00 ሁለት ጊዜ፣ ብር 2.00 አንድ ጊዜ፣ ብር 3.00 ሁለት ጊዜ እና ብር 4.00 አንድ ጊዜ ከቀረበ፣ ዝቅተኛው ልዩ ጨረታ ብር 2.00 ስለሆነ ያሸንፋል። ነገር ግን ዝቅተኛው ጨረታ ሁልጊዜ አያሸንፍም፤ የሚያሸንፈው ዝቅተኛ እና ልዩ የሆነው ጨረታ ብቻ ነው። ተጫራቾች ለአንድ ጨረታ እስከ 100 ጊዜ የተለያዩ መጠኖችን ማቅረብ ይችላሉ። ውድ ዕቃዎችን በዝቅተኛ ዋጋ ያሸንፉ።',
+    en: 'GUESSLOW is a Lowest Unique Bid Auction where the participant who submits the lowest unique bid wins. For instance, if ETB 1.00 is submitted twice, ETB 2.00 once, ETB 3.00 twice, and ETB 4.00 once, the lowest unique bid is ETB 2.00, so it wins. However, it is important to note that the lowest bid does not always win; only the lowest and unique bid wins. Bidders can submit different amounts up to 100 times for a single auction. Win premium items at a fraction of their actual price.',
+    am: 'GUESSLOW ዝቅተኛውን ልዩ ጨረታ ያቀረበ ተሳታፊ የሚያሸንፍበት የጨረታ መድረክ ነው። ለምሳሌ፣ ብር 1.00 ሁለት ጊዜ፣ ብር 2.00 አንድ ጊዜ፣ ብር 3.00 ሁለት ጊዜ እና ብር 4.00 አንድ ጊዜ ከቀረበ፣ ዝቅተኛው ልዩ ጨረታ ብር 2.00 ስለሆነ ያሸንፋል። ነገር ግን ዝቅተኛው ጨረታ ሁልጊዜ አያሸንፍም፤ የሚያሸንፈው ዝቅተኛ እና ልዩ የሆነው ጨረታ ብቻ ነው። ተጫራቾች ለአንድ ጨረታ እስከ 100 ጊዜ የተለያዩ መጠኖችን ማቅረብ ይችላሉ። ውድ ዕቃዎችን በዝቅተኛ ዋጋ ያሸንፉ።',
   },
 
   'auction.bidFee': { en: 'Bid Service Fee', am: 'የጨረታ አገልግሎት ክፍያ' },

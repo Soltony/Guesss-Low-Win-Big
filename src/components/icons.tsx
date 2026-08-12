@@ -1,61 +1,32 @@
 import { cn } from '@/lib/utils';
 
-/** HowLow mark: a gavel striking a descending bid line. */
+/**
+ * GuessLow mark: descending bars with the lowest one picked out — the whole
+ * proposition in one glyph.
+ */
 export function Logo({ className }: { className?: string }) {
   return (
     <svg
-      viewBox="0 0 48 48"
+      viewBox="0 0 32 32"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className={cn('h-8 w-8', className)}
+      className={cn('h-7 w-7', className)}
       aria-hidden="true"
     >
-      <rect width="48" height="48" rx="12" fill="currentColor" fillOpacity="0.12" />
-      <path
-        d="M10 34h20"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
-      <rect
-        x="14.5"
-        y="12"
-        width="16"
-        height="8"
-        rx="2.5"
-        transform="rotate(-40 14.5 12)"
-        fill="currentColor"
-      />
-      <path
-        d="M22 21.5 30.5 30"
-        stroke="currentColor"
-        strokeWidth="3.5"
-        strokeLinecap="round"
-      />
-      <path
-        d="M33 14h5v5"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M38 14 30 22"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-      />
+      <rect width="32" height="32" rx="8" className="fill-primary" />
+      <rect x="7" y="9" width="4" height="14" rx="1.5" fill="currentColor" opacity="0.35" />
+      <rect x="14" y="13" width="4" height="10" rx="1.5" fill="currentColor" opacity="0.55" />
+      <rect x="21" y="17" width="4" height="6" rx="1.5" fill="currentColor" />
+      <circle cx="23" cy="12" r="2" fill="currentColor" />
     </svg>
   );
 }
 
 export function LogoWordmark({ className }: { className?: string }) {
   return (
-    <span className={cn('flex items-center gap-2 font-bold tracking-tight', className)}>
-      <Logo className="h-7 w-7" />
-      <span>
-        How<span className="text-accent">Low</span>
-      </span>
+    <span className={cn('flex items-center gap-2 font-semibold tracking-tight', className)}>
+      <Logo className="h-7 w-7 text-foreground" />
+      <span>GuessLow</span>
     </span>
   );
 }

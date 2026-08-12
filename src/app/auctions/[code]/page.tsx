@@ -35,7 +35,7 @@ export default async function AuctionDetailPage({
   ]);
 
   return (
-    <MiniAppShell user={user} supportPhone={String(settings['platform.supportPhone'] || '8080')}>
+    <MiniAppShell user={user}>
       <AuctionDetail
         auction={auction}
         connected={Boolean(user)}

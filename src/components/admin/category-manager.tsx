@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { StatusBadge } from '@/components/admin/status-badge';
 import { TableCard, EmptyRow } from '@/components/admin/data-shell';
+import { ImageUploader } from '@/components/admin/image-uploader';
 import { useToast } from '@/hooks/use-toast';
 
 export interface CategoryRow {
@@ -247,15 +248,12 @@ export function CategoryManager({
               </div>
             )}
 
-            <div className="space-y-1.5">
-              <Label htmlFor="cat-image">Image URL</Label>
-              <Input
-                id="cat-image"
-                value={form.imageUrl}
-                onChange={(event) => setForm({ ...form, imageUrl: event.target.value })}
-                placeholder="https://…"
-              />
-            </div>
+            <ImageUploader
+              label="Category image"
+              description="Shown in the mini-app category strip. Square artwork works best."
+              value={form.imageUrl}
+              onChange={(imageUrl) => setForm({ ...form, imageUrl })}
+            />
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">

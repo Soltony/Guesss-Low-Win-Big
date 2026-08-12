@@ -137,57 +137,57 @@ export const DEFAULT_TEMPLATES: {
     name: 'Bid confirmed',
     channel: 'SMS',
     bodyEn:
-      'HowLow: your bid of {amount} {currency} on auction {code} ({title}) is confirmed. Service fee {fee} {currency} paid. Good luck!',
+      'GuessLow: your bid of {amount} {currency} on auction {code} ({title}) is confirmed. Service fee {fee} {currency} paid. Good luck!',
     bodyAm:
-      'HowLow: በጨረታ {code} ({title}) ላይ ያቀረቡት {amount} {currency} ጨረታ ተረጋግጧል። የአገልግሎት ክፍያ {fee} {currency} ተከፍሏል። መልካም ዕድል!',
+      'GuessLow: በጨረታ {code} ({title}) ላይ ያቀረቡት {amount} {currency} ጨረታ ተረጋግጧል። የአገልግሎት ክፍያ {fee} {currency} ተከፍሏል። መልካም ዕድል!',
   },
   {
     code: 'BID_FAILED',
     name: 'Bid payment failed',
     channel: 'SMS',
     bodyEn:
-      'HowLow: we could not confirm the payment for your bid on auction {code}. The bid was not counted and no fee was charged.',
+      'GuessLow: we could not confirm the payment for your bid on auction {code}. The bid was not counted and no fee was charged.',
     bodyAm:
-      'HowLow: በጨረታ {code} ላይ ላቀረቡት ጨረታ ክፍያ ማረጋገጥ አልቻልንም። ጨረታው አልተቆጠረም እና ክፍያ አልተቀነሰም።',
+      'GuessLow: በጨረታ {code} ላይ ላቀረቡት ጨረታ ክፍያ ማረጋገጥ አልቻልንም። ጨረታው አልተቆጠረም እና ክፍያ አልተቀነሰም።',
   },
   {
     code: 'AUCTION_ENDING',
     name: 'Auction ending soon',
     channel: 'SMS',
-    bodyEn: 'HowLow: auction {code} ({title}) closes in {hours} hours. Place your final bids now.',
-    bodyAm: 'HowLow: ጨረታ {code} ({title}) በ{hours} ሰዓት ውስጥ ይዘጋል። የመጨረሻ ጨረታዎን አሁን ያቅርቡ።',
+    bodyEn: 'GuessLow: auction {code} ({title}) closes in {hours} hours. Place your final bids now.',
+    bodyAm: 'GuessLow: ጨረታ {code} ({title}) በ{hours} ሰዓት ውስጥ ይዘጋል። የመጨረሻ ጨረታዎን አሁን ያቅርቡ።',
   },
   {
     code: 'AUCTION_SETTLED',
     name: 'Auction result published',
     channel: 'SMS',
     bodyEn:
-      'HowLow: auction {code} ({title}) has closed. The winning bid was {amount} {currency}. Check the app for your results.',
+      'GuessLow: auction {code} ({title}) has closed. The winning bid was {amount} {currency}. Check the app for your results.',
     bodyAm:
-      'HowLow: ጨረታ {code} ({title}) ተዘግቷል። አሸናፊው ጨረታ {amount} {currency} ነበር። ውጤትዎን በመተግበሪያው ይመልከቱ።',
+      'GuessLow: ጨረታ {code} ({title}) ተዘግቷል። አሸናፊው ጨረታ {amount} {currency} ነበር። ውጤትዎን በመተግበሪያው ይመልከቱ።',
   },
   {
     code: 'WINNER_ANNOUNCED',
     name: 'Winner announcement',
     channel: 'SMS',
     bodyEn:
-      'Congratulations! You won {title} on HowLow with the lowest unique bid of {amount} {currency}. Claim your prize in the app before {deadline}.',
+      'Congratulations! You won {title} on GuessLow with the lowest unique bid of {amount} {currency}. Claim your prize in the app before {deadline}.',
     bodyAm:
-      'እንኳን ደስ አለዎት! በHowLow {title} በዝቅተኛ ልዩ ጨረታ {amount} {currency} አሸንፈዋል። ሽልማትዎን ከ{deadline} በፊት በመተግበሪያው ይጠይቁ።',
+      'እንኳን ደስ አለዎት! በGuessLow {title} በዝቅተኛ ልዩ ጨረታ {amount} {currency} አሸንፈዋል። ሽልማትዎን ከ{deadline} በፊት በመተግበሪያው ይጠይቁ።',
   },
   {
     code: 'WINNER_REMINDER',
     name: 'Claim reminder',
     channel: 'SMS',
     bodyEn:
-      'HowLow: reminder — claim your prize for auction {code} before {deadline} or it will be forfeited.',
-    bodyAm: 'HowLow: ማስታወሻ — ለጨረታ {code} ሽልማትዎን ከ{deadline} በፊት ይጠይቁ አለበለዚያ ይሰረዛል።',
+      'GuessLow: reminder — claim your prize for auction {code} before {deadline} or it will be forfeited.',
+    bodyAm: 'GuessLow: ማስታወሻ — ለጨረታ {code} ሽልማትዎን ከ{deadline} በፊት ይጠይቁ አለበለዚያ ይሰረዛል።',
   },
   {
     code: 'PRIZE_FULFILLED',
     name: 'Prize delivered',
     channel: 'SMS',
-    bodyEn: 'HowLow: your prize for auction {code} has been marked as delivered. Enjoy!',
-    bodyAm: 'HowLow: ለጨረታ {code} ያሸነፉት ሽልማት ተሰጥቷል ተብሎ ተመዝግቧል። ደስ ይበልዎት!',
+    bodyEn: 'GuessLow: your prize for auction {code} has been marked as delivered. Enjoy!',
+    bodyAm: 'GuessLow: ለጨረታ {code} ያሸነፉት ሽልማት ተሰጥቷል ተብሎ ተመዝግቧል። ደስ ይበልዎት!',
   },
 ];

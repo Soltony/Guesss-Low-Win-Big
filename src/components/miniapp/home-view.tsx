@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { Gavel, Package, Sparkles, Timer, Trophy } from 'lucide-react';
+import { ArrowRight, Gavel, Package, Timer, Trophy } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { useLanguage } from './language-provider';
 import { AuctionCard } from './auction-card';
 import { EmptyState, SectionHeading } from './section-heading';
@@ -27,6 +28,25 @@ interface RecentWinner {
   settledAt: string;
 }
 
+const STEPS = [
+  {
+    title: 'Pick an auction',
+    body: 'Every item shows its service fee and auction code up front.',
+  },
+  {
+    title: 'Guess low and unique',
+    body: 'Submit an amount nobody else has picked. Many amounts allowed.',
+  },
+  {
+    title: 'Stay hidden',
+    body: 'Bid statuses are sealed while the auction runs, so nothing leaks.',
+  },
+  {
+    title: 'Lowest unique wins',
+    body: 'At zero, the lowest amount held by exactly one bidder takes it.',
+  },
+];
+
 export function HomeView({
   tagline,
   categories,
@@ -48,64 +68,82 @@ export function HomeView({
   const favoriteSet = new Set(favorites);
 
   return (
-    <div className="pb-6">
-      {/* Hero */}
-      <section className="howlow-hero px-4 pb-10 pt-6 text-white">
-        <span className="howlow-cta inline-block rounded-lg px-4 py-2 text-lg font-bold shadow-md">
+    <div className="pb-8">
+      {/* Hero — typographic, on the page canvas rather than a coloured band */}
+      <section className="px-4 pb-6 pt-7">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           {t('app.platform')}
-        </span>
-        <h1 className="mt-5 text-4xl font-extrabold leading-tight tracking-tight">
+        </p>
+        <h1 className="mt-2 text-[32px] font-semibold leading-[1.1] tracking-tight">
           {tagline || t('app.tagline')}
         </h1>
-        <p className="mt-4 text-[15px] leading-relaxed text-white/95">{t('home.description')}</p>
+        <p className="mt-3 max-w-prose text-sm leading-relaxed text-muted-foreground">
+          {t('home.description')}
+        </p>
 
-        <Link
-          href="/auctions"
-          className="howlow-cta mt-6 inline-block rounded-xl border-b-4 border-sky-700/60 px-8 py-4 text-base font-bold uppercase tracking-wide text-white shadow-lg transition active:translate-y-0.5 active:border-b-2"
-        >
-          {t('home.startBidding')}
-        </Link>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <Link
+            href="/auctions"
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            {t('home.startBidding')}
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+          <Link
+            href="#how-it-works"
+            className="inline-flex items-center rounded-md border border-border bg-card px-5 py-2.5 text-sm font-medium transition-colors hover:bg-secondary"
+          >
+            {t('home.howItWorks')}
+          </Link>
+        </div>
+      </section>
 
-        <dl className="mt-7 grid grid-cols-3 gap-3">
+      {/* Stats — one panel, hairline dividers, no colour blocks */}
+      <section className="px-4">
+        <dl className="gl-panel grid grid-cols-3 divide-x divide-border">
           {[
             { label: t('auction.live'), value: stats.liveAuctions, icon: Gavel },
-            { label: t('auction.bids'), value: stats.totalBids, icon: Sparkles },
+            { label: t('auction.bids'), value: stats.totalBids, icon: Timer },
             { label: t('auction.winner'), value: stats.totalWinners, icon: Trophy },
           ].map(({ label, value, icon: Icon }) => (
-            <div
-              key={label}
-              className="rounded-xl bg-white/15 px-3 py-3 text-center backdrop-blur-sm"
-            >
-              <Icon className="mx-auto h-4 w-4 opacity-90" />
-              <dd className="mt-1 text-xl font-bold tabular-nums">{compactNumber(value)}</dd>
-              <dt className="text-[11px] uppercase tracking-wide opacity-90">{label}</dt>
+            <div key={label} className="px-3 py-3 text-center">
+              <Icon className="mx-auto h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.75} />
+              <dd className="mt-1.5 text-xl font-semibold tabular-nums leading-none">
+                {compactNumber(value)}
+              </dd>
+              <dt className="mt-1 text-[11px] text-muted-foreground">{label}</dt>
             </div>
           ))}
         </dl>
       </section>
 
-      {/* Categories */}
+      {/* Categories — quiet chips, not oversized tiles */}
       {categories.length > 0 && (
-        <section className="px-4 pt-6">
-          <div className="no-scrollbar -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2">
+        <section className="pt-7">
+          <SectionHeading title={t('home.categories')} href="/auctions" hrefLabel="Browse" />
+          <div className="no-scrollbar flex gap-2 overflow-x-auto px-4 pb-1">
             {categories.map((category) => (
               <Link
                 key={category.id}
                 href={`/auctions?category=${category.id}`}
-                className="flex w-40 shrink-0 snap-start flex-col items-center gap-3 rounded-2xl border border-border bg-card p-5 shadow-sm transition hover:shadow-md"
+                className="flex shrink-0 items-center gap-2 rounded-md border border-border bg-card py-2 pl-2 pr-3.5 transition-colors hover:bg-secondary"
               >
                 {category.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={category.imageUrl}
-                    alt=""
-                    className="h-16 w-16 object-contain"
-                    loading="lazy"
-                  />
+                  <span className="gl-media h-8 w-8">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={category.imageUrl}
+                      alt=""
+                      className="h-full w-full object-contain p-1"
+                      loading="lazy"
+                    />
+                  </span>
                 ) : (
-                  <Package className="h-16 w-16 text-primary/70" strokeWidth={1.25} />
+                  <span className="gl-media h-8 w-8">
+                    <Package className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                  </span>
                 )}
-                <span className="text-center text-sm font-bold uppercase tracking-wide">
+                <span className="whitespace-nowrap text-sm font-medium">
                   {lang === 'am' && category.nameAm ? category.nameAm : category.name}
                 </span>
               </Link>
@@ -115,14 +153,18 @@ export function HomeView({
       )}
 
       {/* Featured */}
-      <section>
-        <SectionHeading title={t('home.featured')} subtitle={t('home.featuredSub')} />
-        <div className="space-y-4 px-4">
+      <section className="pt-7">
+        <SectionHeading
+          title={t('home.featured')}
+          subtitle={t('home.featuredSub')}
+          href="/auctions"
+        />
+        <div className="space-y-3 px-4">
           {featured.length === 0 ? (
             <EmptyState
               icon={Gavel}
               title={t('common.empty')}
-              description="Featured auctions will appear here once they go live."
+              description="Featured auctions appear here once they go live."
             />
           ) : (
             featured.map((auction) => (
@@ -138,15 +180,18 @@ export function HomeView({
 
       {/* Ending soon */}
       {endingSoon.length > 0 && (
-        <section className="mt-4 bg-secondary/40 pb-6">
-          <SectionHeading title={t('home.endingSoon')} subtitle={t('home.endingSoonSub')} />
-          <div className="space-y-4 px-4">
+        <section className="pt-7">
+          <SectionHeading
+            title={t('home.endingSoon')}
+            subtitle={t('home.endingSoonSub')}
+            href="/auctions?status=ENDING_SOON"
+          />
+          <div className="space-y-3 px-4">
             {endingSoon.map((auction) => (
               <AuctionCard
                 key={auction.id}
                 auction={auction}
                 favorited={favoriteSet.has(auction.id)}
-                highlight
               />
             ))}
           </div>
@@ -155,39 +200,36 @@ export function HomeView({
 
       {/* Recent winners */}
       {recentWinners.length > 0 && (
-        <section className="pb-4">
-          <SectionHeading title={t('auction.winner')} />
-          <ul className="space-y-2 px-4">
+        <section className="pt-7">
+          <SectionHeading title={t('auction.winner')} href="/wins" hrefLabel={t('wins.title')} />
+          <ul className="gl-panel mx-4 divide-y divide-border">
             {recentWinners.map((win) => (
-              <li
-                key={win.id}
-                className="flex items-center gap-3 rounded-xl border border-border bg-card p-3"
-              >
-                {win.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={win.imageUrl}
-                    alt=""
-                    className="h-12 w-12 rounded-lg object-contain"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-secondary">
-                    <Trophy className="h-5 w-5 text-accent" />
-                  </div>
-                )}
+              <li key={win.id} className="flex items-center gap-3 p-3">
+                <span className="gl-media h-10 w-10 shrink-0">
+                  {win.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={win.imageUrl}
+                      alt=""
+                      className="h-full w-full object-contain p-1"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <Trophy className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                  )}
+                </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{win.title}</p>
+                  <p className="truncate text-sm font-medium">{win.title}</p>
                   <p className="text-xs text-muted-foreground">
-                    {win.winner} · #{win.code}
+                    {win.winner} · <span className="font-mono">#{win.code}</span>
                   </p>
                 </div>
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground">{t('auction.winningBid')}</p>
-                  <p className="font-bold text-primary">
-                    {win.amount.toFixed(2)} {win.currency === 'ETB' ? 'Br' : win.currency}
-                  </p>
-                </div>
+                <p className="shrink-0 text-sm font-semibold tabular-nums">
+                  {win.amount.toFixed(2)}{' '}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {win.currency === 'ETB' ? 'Br' : win.currency}
+                  </span>
+                </p>
               </li>
             ))}
           </ul>
@@ -195,41 +237,24 @@ export function HomeView({
       )}
 
       {/* How it works */}
-      <section className="px-4 pb-6">
+      <section id="how-it-works" className="scroll-mt-20 pt-7">
         <SectionHeading title={t('home.howItWorks')} />
-        <ol className="space-y-3">
-          {[
-            {
-              icon: Gavel,
-              title: 'Pick an auction',
-              body: 'Choose any live item. Each auction shows its service fee and auction code.',
-            },
-            {
-              icon: Sparkles,
-              title: 'Guess low and unique',
-              body: 'Submit an amount no one else has picked. You can submit many different amounts.',
-            },
-            {
-              icon: Timer,
-              title: 'Wait for the close',
-              body: 'Bid statuses stay hidden while the auction runs, so nobody can map the bids.',
-            },
-            {
-              icon: Trophy,
-              title: 'Lowest unique wins',
-              body: 'When the timer hits zero, the lowest amount held by exactly one bidder wins.',
-            },
-          ].map((step, index) => (
-            <li
-              key={step.title}
-              className="flex gap-3 rounded-xl border border-border bg-card p-4"
-            >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 font-bold text-primary">
+        <ol className="gl-panel mx-4 divide-y divide-border">
+          {STEPS.map((step, index) => (
+            <li key={step.title} className="flex gap-3 p-4">
+              <span
+                className={cn(
+                  'flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
+                  index === STEPS.length - 1
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-secondary text-muted-foreground'
+                )}
+              >
                 {index + 1}
-              </div>
+              </span>
               <div>
-                <p className="font-semibold">{step.title}</p>
-                <p className="mt-0.5 text-sm text-muted-foreground">{step.body}</p>
+                <p className="text-sm font-medium">{step.title}</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{step.body}</p>
               </div>
             </li>
           ))}

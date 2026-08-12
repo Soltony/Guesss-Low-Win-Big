@@ -33,11 +33,15 @@ export function BidPanel({ auction, connected, bidsUsed }: Props) {
   const currency = auction.currency === 'ETB' ? 'Br' : auction.currency;
   const remaining = Math.max(0, auction.maxBidsPerUser - bidsUsed);
   const isLive = auction.status === 'LIVE';
-  const disabled = !isLive || phase === 'submitting' || phase === 'awaiting-payment';
+  const busy = phase === 'submitting' || phase === 'awaiting-payment';
+  const disabled = !isLive || busy;
 
-  useEffect(() => () => {
-    if (pollTimer.current) clearInterval(pollTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (pollTimer.current) clearInterval(pollTimer.current);
+    },
+    []
+  );
 
   const step = (direction: 1 | -1) => {
     const current = Number(amount);
@@ -57,15 +61,13 @@ export function BidPanel({ auction, connected, bidsUsed }: Props) {
           clearInterval(pollTimer.current!);
           setPhase('failed');
           setMessage(
-            'We are still waiting for the payment confirmation. Check My Bids in a moment — if the fee was taken, your bid will appear there.'
+            'Still waiting on the payment confirmation. Check My Bids shortly — if the fee was taken, your bid will be there.'
           );
           return;
         }
 
         try {
-          const response = await fetch(`/api/miniapp/bids/${bidId}/status`, {
-            cache: 'no-store',
-          });
+          const response = await fetch(`/api/miniapp/bids/${bidId}/status`, { cache: 'no-store' });
           if (!response.ok) return;
           const data = await response.json();
 
@@ -85,7 +87,7 @@ export function BidPanel({ auction, connected, bidsUsed }: Props) {
             );
           }
         } catch {
-          // Transient network blip inside the webview; the next tick retries.
+          // Transient blip inside the webview; the next tick retries.
         }
       }, POLL_INTERVAL_MS);
     },
@@ -97,7 +99,7 @@ export function BidPanel({ auction, connected, bidsUsed }: Props) {
       toast({
         variant: 'destructive',
         title: 'Session required',
-        description: 'Please open HowLow from the super app to place a bid.',
+        description: 'Open GuessLow from the super app to place a bid.',
       });
       return;
     }
@@ -137,57 +139,66 @@ export function BidPanel({ auction, connected, bidsUsed }: Props) {
       pollBidStatus(data.bidId);
     } catch {
       setPhase('failed');
-      setMessage('Network error. Please check your connection and try again.');
+      setMessage('Network error. Check your connection and try again.');
     }
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between text-sm">
-        <span className="text-muted-foreground">
-          {t('bid.feeNotice', { fee: `${auction.bidFee.toFixed(2)} ${currency}` })}
+    <div className="gl-panel p-4">
+      <div className="flex items-baseline justify-between gap-2">
+        <label htmlFor="bid-amount" className="text-sm font-semibold">
+          {t('auction.bidAmount')}
+        </label>
+        <span className="text-xs text-muted-foreground">
+          {remaining} {t('auction.bidsLeft')}
         </span>
       </div>
 
-      <div className="flex items-stretch overflow-hidden rounded-xl border border-input bg-card">
+      <div className="mt-2 flex items-stretch gap-2">
         <button
           type="button"
           onClick={() => step(-1)}
           disabled={disabled}
           aria-label="Decrease bid amount"
-          className="flex w-14 items-center justify-center border-r border-input text-foreground transition hover:bg-secondary disabled:opacity-40"
+          className="flex w-11 shrink-0 items-center justify-center rounded-md border border-border text-foreground transition-colors hover:bg-secondary disabled:opacity-40"
         >
-          <Minus className="h-5 w-5" />
+          <Minus className="h-4 w-4" />
         </button>
 
-        <input
-          type="number"
-          inputMode="decimal"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          disabled={disabled}
-          placeholder={t('auction.bidAmount')}
-          min={auction.minBidAmount}
-          max={auction.maxBidAmount}
-          step={auction.bidStep}
-          aria-label={t('auction.bidAmount')}
-          className="min-w-0 flex-1 bg-transparent px-3 py-4 text-center text-lg font-semibold outline-none placeholder:font-normal placeholder:text-muted-foreground disabled:opacity-60"
-        />
+        <div className="relative min-w-0 flex-1">
+          <input
+            id="bid-amount"
+            type="number"
+            inputMode="decimal"
+            value={amount}
+            onChange={(event) => setAmount(event.target.value)}
+            disabled={disabled}
+            placeholder="0.00"
+            min={auction.minBidAmount}
+            max={auction.maxBidAmount}
+            step={auction.bidStep}
+            className="h-12 w-full rounded-md border border-input bg-card px-3 pr-10 text-center text-xl font-semibold tabular-nums outline-none transition-shadow focus:ring-2 focus:ring-ring disabled:opacity-60"
+          />
+          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+            {currency}
+          </span>
+        </div>
 
         <button
           type="button"
           onClick={() => step(1)}
           disabled={disabled}
           aria-label="Increase bid amount"
-          className="flex w-14 items-center justify-center border-l border-input text-foreground transition hover:bg-secondary disabled:opacity-40"
+          className="flex w-11 shrink-0 items-center justify-center rounded-md border border-border text-foreground transition-colors hover:bg-secondary disabled:opacity-40"
         >
-          <Plus className="h-5 w-5" />
+          <Plus className="h-4 w-4" />
         </button>
       </div>
 
-      <p className="text-center text-xs text-muted-foreground">
-        {t('auction.range')}: {auction.minBidAmount.toFixed(2)} – {auction.maxBidAmount.toFixed(2)}{' '}
-        {currency} · {remaining} {t('auction.bidsLeft')}
+      <p className="mt-2 text-xs text-muted-foreground">
+        {auction.minBidAmount.toFixed(2)} – {auction.maxBidAmount.toFixed(2)} {currency}, in steps
+        of {auction.bidStep.toFixed(2)}.{' '}
+        {t('bid.feeNotice', { fee: `${auction.bidFee.toFixed(2)} ${currency}` })}
       </p>
 
       <button
@@ -195,13 +206,14 @@ export function BidPanel({ auction, connected, bidsUsed }: Props) {
         onClick={submit}
         disabled={disabled || remaining === 0}
         className={cn(
-          'howlow-cta flex w-full items-center justify-center gap-2 rounded-xl px-4 py-4 text-base font-bold text-white shadow-md transition active:scale-[0.99]',
-          (disabled || remaining === 0) && 'cursor-not-allowed opacity-60'
+          'mt-3 flex w-full items-center justify-center gap-2 rounded-md px-4 py-3 text-sm font-semibold transition-colors',
+          'bg-primary text-primary-foreground hover:bg-primary/90',
+          (disabled || remaining === 0) && 'cursor-not-allowed opacity-50'
         )}
       >
-        {phase === 'submitting' || phase === 'awaiting-payment' ? (
+        {busy ? (
           <>
-            <Loader2 className="h-5 w-5 animate-spin" />
+            <Loader2 className="h-4 w-4 animate-spin" />
             {phase === 'submitting' ? 'Submitting…' : t('bid.confirming')}
           </>
         ) : !isLive ? (
@@ -214,35 +226,35 @@ export function BidPanel({ auction, connected, bidsUsed }: Props) {
       </button>
 
       {phase === 'awaiting-payment' && (
-        <div className="flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/10 px-3 py-3 text-sm">
-          <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-warning" />
-          <p>
-            Approve the {auction.bidFee.toFixed(2)} {currency} service fee in your wallet. Your bid
-            counts as soon as the payment is confirmed — keep this screen open.
-          </p>
-        </div>
+        <p className="mt-3 flex items-start gap-2 rounded-md border border-border bg-secondary/60 px-3 py-2.5 text-xs leading-relaxed">
+          <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+          <span>
+            Approve the {auction.bidFee.toFixed(2)} {currency} fee in your wallet. Your bid counts
+            the moment the payment clears — keep this screen open.
+          </span>
+        </p>
       )}
 
       {phase === 'confirmed' && (
-        <div className="flex items-start gap-2 rounded-xl border border-success/40 bg-success/10 px-3 py-3 text-sm">
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-          <p>
+        <p className="mt-3 flex items-start gap-2 rounded-md border border-success/30 bg-success/5 px-3 py-2.5 text-xs leading-relaxed">
+          <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
+          <span>
             {t('bid.confirmed')}. {t('bid.hiddenUntilEnd')}
-          </p>
-        </div>
+          </span>
+        </p>
       )}
 
       {phase === 'failed' && message && (
-        <div className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-3 text-sm">
-          <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-          <p>{message}</p>
-        </div>
+        <p className="mt-3 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-xs leading-relaxed">
+          <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+          <span>{message}</span>
+        </p>
       )}
 
-      <div className="flex items-center justify-center gap-2 rounded-xl bg-secondary/60 px-3 py-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        <ShieldCheck className="h-4 w-4 text-primary" />
+      <p className="mt-3 flex items-center gap-1.5 border-t border-border pt-3 text-[11px] text-muted-foreground">
+        <ShieldCheck className="h-3.5 w-3.5" />
         {t('auction.terms')}
-      </div>
+      </p>
     </div>
   );
 }

@@ -5,19 +5,19 @@ import { cn } from '@/lib/utils';
 import { countdownFrom } from '@/lib/format';
 
 /**
- * Live countdown. Renders the server-computed value first so there is no
- * hydration mismatch, then ticks locally every second.
+ * Live countdown. Renders a placeholder on the server so hydration cannot
+ * mismatch, then ticks locally once mounted.
  */
 export function Countdown({
   endAt,
   className,
   onEnd,
-  compact = false,
+  variant = 'inline',
 }: {
   endAt: string;
   className?: string;
   onEnd?: () => void;
-  compact?: boolean;
+  variant?: 'inline' | 'pill' | 'blocks';
 }) {
   const [now, setNow] = useState(() => new Date(endAt).getTime());
   const [mounted, setMounted] = useState(false);
@@ -36,34 +36,69 @@ export function Countdown({
   }, [mounted, c.ended, onEnd]);
 
   if (!mounted) {
-    return <span className={cn('tabular-nums', className)}>—</span>;
+    return <span className={cn('tabular-nums text-muted-foreground', className)}>··:··:··</span>;
   }
 
   if (c.ended) {
-    return <span className={cn('font-semibold text-muted-foreground', className)}>Ended</span>;
+    return <span className={cn('font-medium text-muted-foreground', className)}>Ended</span>;
   }
 
   const pad = (n: number) => String(n).padStart(2, '0');
   const urgent = c.total < 60 * 60 * 1000;
 
-  if (compact) {
+  if (variant === 'blocks') {
+    const parts = [
+      { value: c.days, label: 'days' },
+      { value: c.hours, label: 'hrs' },
+      { value: c.minutes, label: 'min' },
+      { value: c.seconds, label: 'sec' },
+    ];
     return (
-      <span className={cn('tabular-nums font-semibold', urgent && 'text-destructive', className)}>
-        {c.days > 0 ? `${c.days}d ` : ''}
-        {pad(c.hours)}:{pad(c.minutes)}:{pad(c.seconds)}
+      <div className={cn('flex gap-2', className)}>
+        {parts.map((part) => (
+          <div
+            key={part.label}
+            className={cn(
+              'min-w-[52px] rounded-md border px-2 py-1.5 text-center',
+              urgent ? 'border-accent/40 bg-accent/5' : 'border-border bg-card'
+            )}
+          >
+            <p
+              className={cn(
+                'text-lg font-semibold tabular-nums leading-none',
+                urgent && 'text-accent'
+              )}
+            >
+              {pad(part.value)}
+            </p>
+            <p className="mt-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+              {part.label}
+            </p>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  const text = `${c.days > 0 ? `${c.days}d ` : ''}${pad(c.hours)}:${pad(c.minutes)}:${pad(c.seconds)}`;
+
+  if (variant === 'pill') {
+    return (
+      <span
+        className={cn(
+          'gl-pill tabular-nums',
+          urgent && 'border-accent/40 text-accent',
+          className
+        )}
+      >
+        {text}
       </span>
     );
   }
 
   return (
-    <span
-      className={cn(
-        'tabular-nums font-semibold tracking-tight',
-        urgent ? 'text-destructive' : 'text-destructive/80',
-        className
-      )}
-    >
-      {c.days}d : {pad(c.hours)}h : {pad(c.minutes)}m : {pad(c.seconds)}s
+    <span className={cn('font-medium tabular-nums', urgent && 'text-accent', className)}>
+      {text}
     </span>
   );
 }

@@ -19,6 +19,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { ImageUploadButton } from '@/components/admin/image-uploader';
 import { useToast } from '@/hooks/use-toast';
 
 export interface ItemFormValues {
@@ -79,7 +80,7 @@ export function ItemForm({
   const addImage = () => {
     const url = imageInput.trim();
     if (!url) return;
-    if (!/^https?:\/\//i.test(url)) {
+    if (!/^https?:\/\//i.test(url) && !url.startsWith('/uploads/')) {
       toast({ variant: 'destructive', title: 'Image URL must start with http:// or https://' });
       return;
     }
@@ -209,6 +210,23 @@ export function ItemForm({
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <ImageUploadButton
+                  label="Upload images"
+                  disabled={form.images.length >= 10}
+                  onUploaded={(url) =>
+                    setForm((prev) =>
+                      prev.images.includes(url) || prev.images.length >= 10
+                        ? prev
+                        : { ...prev, images: [...prev.images, url] }
+                    )
+                  }
+                />
+                <span className="self-center text-xs text-muted-foreground">
+                  or paste a URL
+                </span>
+              </div>
+
               <div className="flex gap-2">
                 <Input
                   value={imageInput}

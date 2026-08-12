@@ -27,6 +27,7 @@ export async function getShellUser(): Promise<ShellUser | null> {
     fullName: bidder.fullName,
     language: (bidder.language === 'am' ? 'am' : 'en') as Language,
     activeBids,
+    isTest: Boolean(session.isTest),
   };
 }
 

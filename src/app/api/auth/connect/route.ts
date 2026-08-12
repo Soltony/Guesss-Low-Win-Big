@@ -5,7 +5,7 @@ import { clientMeta, jsonError } from '@/lib/api';
 export const dynamic = 'force-dynamic';
 
 /**
- * Exchanges the super-app token for a HowLow bidder session cookie.
+ * Exchanges the super-app token for a GuessLow bidder session cookie.
  * Called by /connect once the webview hands us the Authorization header.
  */
 export async function POST(req: NextRequest) {

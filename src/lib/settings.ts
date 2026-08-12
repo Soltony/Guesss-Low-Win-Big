@@ -54,7 +54,7 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     description: 'Shown in the mini-app header, SMS messages and page titles.',
     category: 'platform',
     type: 'string',
-    default: 'HowLow',
+    default: 'GuessLow',
   },
   {
     key: 'platform.tagline',
@@ -107,7 +107,7 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     description: 'Message displayed to bidders while maintenance mode is on.',
     category: 'platform',
     type: 'textarea',
-    default: 'HowLow is briefly unavailable for maintenance. Please try again shortly.',
+    default: 'GuessLow is briefly unavailable for maintenance. Please try again shortly.',
   },
 
   // ---- Bidding ----
@@ -332,7 +332,7 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     description: 'Company name sent to the super-app payment gateway.',
     category: 'payments',
     type: 'string',
-    default: 'HowLow',
+    default: 'GuessLow',
   },
   {
     key: 'payments.accountNo',

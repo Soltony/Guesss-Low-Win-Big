@@ -2,101 +2,103 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * GuessLow design tokens.
+ *
+ * The palette is inherited from the Loan platform so both products read as one
+ * family: brand yellow as the primary action colour on a cool neutral canvas,
+ * with a warm orange reserved for urgency and live states.
+ */
+
 @layer base {
   :root {
-    --background: 150 20% 98%;
-    --foreground: 150 15% 10%;
+    --background: 220 20% 97%;
+    --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
-    --card-foreground: 150 15% 10%;
+    --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 150 15% 10%;
+    --popover-foreground: 222.2 84% 4.9%;
 
-    /* HowLow brand green */
-    --primary: 90 52% 45%;
-    --primary-foreground: 0 0% 100%;
+    /* Brand yellow — always pairs with black text */
+    --primary: 45 93% 47%;
+    --primary-foreground: 0 0% 0%;
 
-    --secondary: 150 20% 95%;
-    --secondary-foreground: 150 20% 18%;
-    --muted: 150 16% 95%;
-    --muted-foreground: 150 8% 42%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
 
-    /* Bid CTA orange */
-    --accent: 33 95% 54%;
+    /* Warm orange — urgency, live states, highlights */
+    --accent: 25 100% 45%;
     --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 78% 52%;
-    --destructive-foreground: 0 0% 100%;
-    --success: 142 66% 36%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --success: 152 62% 34%;
     --success-foreground: 0 0% 100%;
-    --warning: 38 95% 50%;
+    --warning: 38 95% 48%;
     --warning-foreground: 30 60% 12%;
 
-    --border: 150 14% 89%;
-    --input: 150 14% 89%;
-    --ring: 90 52% 45%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 210 50% 60%;
 
-    --chart-1: 90 52% 45%;
-    --chart-2: 33 95% 54%;
-    --chart-3: 199 82% 44%;
-    --chart-4: 271 60% 58%;
-    --chart-5: 348 76% 55%;
+    --chart-1: 45 93% 47%;
+    --chart-2: 25 100% 45%;
+    --chart-3: 210 50% 50%;
+    --chart-4: 152 55% 40%;
+    --chart-5: 271 55% 55%;
 
-    --radius: 0.75rem;
+    --radius: 0.5rem;
 
     --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 150 15% 10%;
-    --sidebar-primary: 90 52% 45%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 150 20% 95%;
-    --sidebar-accent-foreground: 150 20% 18%;
-    --sidebar-border: 150 14% 89%;
-    --sidebar-ring: 90 52% 45%;
+    --sidebar-foreground: 222.2 84% 4.9%;
+    --sidebar-primary: 45 93% 47%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 210 40% 96.1%;
+    --sidebar-accent-foreground: 222.2 47.4% 11.2%;
+    --sidebar-border: 214.3 31.8% 91.4%;
+    --sidebar-ring: 210 40% 60%;
   }
 
   .dark {
-    --background: 150 18% 7%;
-    --foreground: 150 10% 96%;
-    --card: 150 16% 10%;
-    --card-foreground: 150 10% 96%;
-    --popover: 150 16% 10%;
-    --popover-foreground: 150 10% 96%;
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 47% 8%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 47% 8%;
+    --popover-foreground: 210 40% 98%;
 
-    --primary: 90 55% 52%;
-    --primary-foreground: 150 30% 8%;
+    --primary: 45 93% 47%;
+    --primary-foreground: 0 0% 0%;
 
-    --secondary: 150 12% 17%;
-    --secondary-foreground: 150 10% 96%;
-    --muted: 150 12% 17%;
-    --muted-foreground: 150 8% 65%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
 
-    --accent: 33 92% 58%;
-    --accent-foreground: 30 60% 10%;
+    --accent: 25 100% 50%;
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 70% 48%;
-    --destructive-foreground: 0 0% 100%;
-    --success: 142 60% 45%;
-    --success-foreground: 150 30% 8%;
+    --destructive: 0 62.8% 45%;
+    --destructive-foreground: 210 40% 98%;
+    --success: 152 55% 42%;
+    --success-foreground: 0 0% 100%;
     --warning: 38 92% 55%;
     --warning-foreground: 30 60% 12%;
 
-    --border: 150 10% 20%;
-    --input: 150 10% 20%;
-    --ring: 90 55% 52%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 210 50% 60%;
 
-    --chart-1: 90 55% 52%;
-    --chart-2: 33 92% 58%;
-    --chart-3: 199 80% 55%;
-    --chart-4: 271 60% 66%;
-    --chart-5: 348 76% 62%;
-
-    --sidebar-background: 150 16% 10%;
-    --sidebar-foreground: 150 10% 96%;
-    --sidebar-primary: 90 55% 52%;
-    --sidebar-primary-foreground: 150 30% 8%;
-    --sidebar-accent: 150 12% 17%;
-    --sidebar-accent-foreground: 150 10% 96%;
-    --sidebar-border: 150 10% 20%;
-    --sidebar-ring: 90 55% 52%;
+    --sidebar-background: 222.2 47% 8%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 45 93% 47%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 217.2 32.6% 17.5%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 217.2 32.6% 17.5%;
+    --sidebar-ring: 210 40% 60%;
   }
 }
 
@@ -109,7 +111,7 @@
     font-family: var(--font-inter), system-ui, -apple-system, 'Segoe UI', sans-serif;
     -webkit-tap-highlight-color: transparent;
   }
-  /* Hide number input spinners — bid amounts use custom -/+ steppers */
+  /* Bid amounts use custom steppers, so the native spinners are noise. */
   input[type='number']::-webkit-outer-spin-button,
   input[type='number']::-webkit-inner-spin-button {
     -webkit-appearance: none;
@@ -121,22 +123,31 @@
 }
 
 @layer components {
-  /* Mini-app hero band, mirrors the super-app green header */
-  .howlow-hero {
-    background:
-      radial-gradient(120% 90% at 85% 0%, hsl(90 60% 58% / 0.55) 0%, transparent 55%),
-      linear-gradient(160deg, hsl(90 52% 48%) 0%, hsl(96 48% 42%) 100%);
+  /* Flat panel: the single surface treatment across the mini-app. */
+  .gl-panel {
+    @apply rounded-lg border border-border bg-card;
   }
 
-  .howlow-cta {
-    background: linear-gradient(95deg, hsl(20 92% 58%) 0%, hsl(38 96% 56%) 100%);
+  /* Neutral backdrop behind product photography. */
+  .gl-media {
+    @apply flex items-center justify-center overflow-hidden rounded-md bg-secondary;
   }
 
-  .live-dot {
-    @apply inline-block h-2 w-2 rounded-full bg-white animate-pulse-live;
+  /* Small bordered label used for codes, counts and countdowns. */
+  .gl-pill {
+    @apply inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-xs font-medium;
   }
 
-  /* Safe area padding for the super-app webview bottom bar */
+  .gl-live-dot {
+    @apply inline-block h-1.5 w-1.5 rounded-full bg-accent;
+    animation: gl-pulse 2s ease-in-out infinite;
+  }
+
+  /* Thin rule that opens a section, in place of centred banner headings. */
+  .gl-section-rule {
+    @apply border-l-2 border-primary pl-3;
+  }
+
   .pb-safe {
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 1rem);
   }
@@ -147,5 +158,15 @@
   .no-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;
+  }
+}
+
+@keyframes gl-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
   }
 }

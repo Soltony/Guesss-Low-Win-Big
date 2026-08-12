@@ -91,6 +91,7 @@ export async function POST(req: NextRequest) {
       bidderId: session.bidderId,
       amount,
       superAppToken: session.superAppToken,
+      isTest: session.isTest,
       ipAddress: meta.ipAddress,
       userAgent: meta.userAgent,
     });

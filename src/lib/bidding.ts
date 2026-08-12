@@ -20,6 +20,8 @@ export interface PlaceBidInput {
   bidderId: string;
   amount: number;
   superAppToken: string;
+  /** Session came from the authorization bypass — never charge a test bidder. */
+  isTest?: boolean;
   ipAddress?: string | null;
   userAgent?: string | null;
 }
@@ -151,10 +153,10 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
   }
 
   // ---- Record the bid ----
-  // In pilot mode no money changes hands, so the bid must record a zero fee —
-  // otherwise the bidder's "fees paid" total and the revenue reports would
-  // claim income that was never collected.
-  const feesEnabled = Boolean(settings['payments.enabled']);
+  // No money changes hands in pilot mode or for a bypassed test session, so the
+  // bid must record a zero fee — otherwise the bidder's "fees paid" total and
+  // the revenue reports would claim income that was never collected.
+  const feesEnabled = Boolean(settings['payments.enabled']) && !input.isTest;
   const feeAmount = feesEnabled ? toNum(auction.bidFee) : 0;
   const sequence = myBids.length + 1;
 
@@ -165,7 +167,7 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
       amount,
       feeAmount,
       status: 'PENDING_PAYMENT',
-      channel: 'MINIAPP',
+      channel: input.isTest ? 'TEST' : 'MINIAPP',
       sequence,
       ipAddress: input.ipAddress ?? undefined,
       userAgent: input.userAgent?.slice(0, 1000) ?? undefined,
@@ -188,7 +190,7 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
 
   // Fees disabled (pilot mode): confirm immediately, no gateway round-trip.
   if (!feesEnabled || feeAmount <= 0) {
-    await confirmBid(bid.id, { source: 'NO_FEE' });
+    await confirmBid(bid.id, { source: input.isTest ? 'TEST_SESSION' : 'NO_FEE' });
     return {
       bidId: bid.id,
       amount,

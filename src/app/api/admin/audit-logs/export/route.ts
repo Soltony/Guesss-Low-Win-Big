@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
     details: { rows: logs.length, from, to, truncated: logs.length === MAX_ROWS },
   });
 
-  const filename = `howlow-audit-${new Date().toISOString().slice(0, 10)}.csv`;
+  const filename = `guesslow-audit-${new Date().toISOString().slice(0, 10)}.csv`;
 
   return new NextResponse(`﻿${csv}`, {
     headers: {

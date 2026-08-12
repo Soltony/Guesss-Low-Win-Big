@@ -21,7 +21,7 @@ export interface ConnectResult {
 }
 
 /**
- * Exchanges a super-app token for a HowLow bidder session.
+ * Exchanges a super-app token for a GuessLow bidder session.
  *
  * The super app is the identity provider: it hands us a token, the token
  * service resolves it to a phone number, and that phone number is the bidder.
@@ -65,7 +65,7 @@ export async function connectMiniAppSession(
   if (bidder.status === 'BLOCKED') {
     throw new MiniAppConnectError(
       403,
-      'Your account is blocked from using HowLow. Please contact support.'
+      'Your account is blocked from using GuessLow. Please contact support.'
     );
   }
 

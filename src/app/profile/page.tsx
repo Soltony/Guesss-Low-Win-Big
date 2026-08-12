@@ -17,16 +17,16 @@ export default async function ProfilePage() {
 
   if (!user) {
     return (
-      <MiniAppShell user={null} supportPhone={supportPhone}>
+      <MiniAppShell user={null}>
         <div className="px-4 py-10">
           <EmptyState
             icon={Lock}
             title="Connect your account"
-            description="Open HowLow from the super app to see your profile."
+            description="Open GuessLow from the super app to see your profile."
             action={
               <Link
                 href="/connect"
-                className="howlow-cta rounded-xl px-5 py-2.5 text-sm font-bold text-white"
+                className="rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
               >
                 Connect
               </Link>
@@ -64,7 +64,7 @@ export default async function ProfilePage() {
   ]);
 
   return (
-    <MiniAppShell user={user} supportPhone={supportPhone}>
+    <MiniAppShell user={user}>
       <ProfileView
         profile={{
           phone: bidder.phoneNumber,

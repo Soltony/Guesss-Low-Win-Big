@@ -11,11 +11,11 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: 'HowLow — Bid Low! Win Big!',
-    template: '%s | HowLow',
+    default: 'GuessLow — Bid Low! Win Big!',
+    template: '%s | GuessLow',
   },
   description:
-    'HowLow is a Lowest Unique Bid Auction platform. Submit the lowest unique bid and win premium items at a fraction of their actual price.',
+    'GuessLow is a Lowest Unique Bid Auction platform. Submit the lowest unique bid and win premium items at a fraction of their actual price.',
 };
 
 export const viewport: Viewport = {

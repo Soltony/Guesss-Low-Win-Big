@@ -1,4 +1,4 @@
-# HowLow — Guess Low, Win Big
+# GuessLow — Guess Low, Win Big
 
 A **Lowest Unique Bid Auction (LUBA)** platform built to run as a **super-app mini-app**, with a full operations console behind it.
 
@@ -14,10 +14,12 @@ The rule the whole system serves: **the winner is the participant holding the lo
 - [Getting started](#getting-started)
 - [Environment](#environment)
 - [How the mini-app authenticates](#how-the-mini-app-authenticates)
+  - [Testing without the super app](#testing-without-the-super-app)
 - [How bidding and payment work](#how-bidding-and-payment-work)
 - [Settlement](#settlement)
 - [The scheduled tick](#the-scheduled-tick)
 - [Admin console](#admin-console)
+- [Image uploads](#image-uploads)
 - [Roles and permissions](#roles-and-permissions)
 - [Configuration](#configuration)
 - [Project layout](#project-layout)
@@ -33,6 +35,7 @@ Deliberately identical to the Loan reference project, so both deploy the same wa
 | --- | --- |
 | Framework | Next.js 16 (App Router, React 19, TypeScript) |
 | Styling | Tailwind CSS + shadcn/ui (Radix primitives), lucide icons |
+| Palette | Inherited from Loan: brand yellow `45 93% 47%` on a cool neutral canvas, warm orange `25 100% 45%` for urgency |
 | Database | SQL Server via Prisma 5 |
 | Sessions | `jose` JWT — short-lived access token + rotating refresh token, DB-backed and revocable |
 | Passwords | bcrypt (cost 12) |
@@ -55,7 +58,7 @@ npm run dev                   # http://localhost:9003
 ```
 
 The seed prints the bootstrap Super Admin credentials. Defaults are
-`admin@howlow.et` / `ChangeMe!2026`, overridable with `SEED_ADMIN_EMAIL`,
+`admin@guesslow.et` / `ChangeMe!2026`, overridable with `SEED_ADMIN_EMAIL`,
 `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_PHONE`. The account is created with
 `passwordChangeRequired`, so the first sign-in forces a real password.
 
@@ -91,6 +94,7 @@ See `.env.example` for the annotated list. The ones that matter:
 | `PAYMENT_CALLBACK_STRICT` | `true` rejects callbacks whose signature does not verify — see below |
 | `SMS_API_URL`, `SMS_API_KEY`, `SMS_SENDER_ID` | Outbound messaging. Unset ⇒ messages are logged, not sent |
 | `CRON_SECRET` | Shared secret for `/api/cron/tick` |
+| `ALLOW_TEST_LOGIN` | `true` adds the authorization bypass to `/connect` — see below. Never set in production |
 
 ---
 
@@ -120,6 +124,30 @@ path before redirecting.
 Browsing (`/`, `/auctions`, `/auctions/[code]`) is open so the super app can
 deep-link into an item. Anything personal or transactional — `/my-bids`,
 `/wins`, `/profile`, and every `/api/miniapp/*` route — requires the session.
+
+### Testing without the super app
+
+Set `ALLOW_TEST_LOGIN=true` and `/connect` grows a **Test sign-in** panel: enter
+any phone number (or leave it blank for a generated one) and you are in. Add
+`?test=1` to force that screen even when a real token is present, so you can
+switch identities without clearing the webview.
+
+The bypass is fenced in on every side:
+
+| Guard | Effect |
+| --- | --- |
+| Env flag | The endpoint returns 403 and the panel does not render unless the flag is on |
+| Session stamp | `isTest` lives inside the signed cookie, so it cannot be forged |
+| Mini-app banner | An orange bar across the top of every screen states the session is a test |
+| Admin banner | The dashboard warns, in the console, that the bypass is live |
+| No charging | Test bids skip the payment gateway entirely and record a **zero fee** |
+| Labelled data | Test bids are stored with `channel = TEST`, so they are filterable and never inflate revenue |
+
+Everything else still applies: bid range, step grid, per-bidder cap, cooldown,
+duplicate-amount rule, and the sealed bid status. A test bidder is a real
+bidder that simply pays nothing, so the full flow is exercised honestly.
+
+Clean up afterwards by deleting bids where `channel = 'TEST'`.
 
 ---
 
@@ -232,6 +260,7 @@ even if the cron job is down.
 | **Winners** | Claim → verify → deliver, forfeiture, and runner-up promotion |
 | **Payments** | Reconciliation: manual confirm, fail, and refund/reversal |
 | **Items / Categories** | The prize catalogue, bilingual, with image galleries |
+| **Images** | Every artwork field takes a device upload (drag-and-drop or file picker) or a pasted URL |
 | **Content** | Home banners and versioned terms & conditions |
 | **Bidders** | Customer accounts, activity, and suspend/block moderation |
 | **Notifications** | Editable EN/AM message templates and the delivery log |
@@ -249,6 +278,30 @@ Guardrails built into the console:
 - Items still referenced by an auction are deactivated instead of deleted.
 - The last active Super Admin cannot be demoted, disabled, or deleted.
 - Nobody can approve their own maker-checker request.
+
+---
+
+## Image uploads
+
+Item photos, category artwork and home banners all accept a file from the
+device — drag it onto the drop zone or use the picker — with "use a URL
+instead" still there for artwork already on a CDN.
+
+`POST /api/admin/uploads` takes the file and returns `{ url }`. It:
+
+- requires an admin session with create or update on items, categories or content;
+- caps uploads at **5 MB**;
+- identifies the format by **magic number**, not the declared MIME type or the
+  file extension, and accepts only PNG, JPEG, WebP, GIF and AVIF — **SVG is
+  refused**, because it can carry script and would run from our own origin;
+- generates the stored filename itself, so path traversal and overwrites are
+  impossible;
+- writes to `public/uploads/` and records the upload in the audit log.
+
+`public/uploads/` is git-ignored. On a platform with an ephemeral filesystem
+(most serverless hosts) that folder does not survive a deploy — mount a volume,
+or swap the `writeFile` call in the route for an object-store client. Nothing
+else has to change, because the rest of the app only ever sees the returned URL.
 
 ---
 
@@ -351,16 +404,18 @@ allowed values.
 Before launch:
 
 1. Replace `SESSION_SECRET` with a long random value; never reuse the example.
-2. Confirm the payment callback signature format, then set
+2. **Unset `ALLOW_TEST_LOGIN`.** With it on, anyone who can reach `/connect`
+   can sign in as any phone number.
+3. Confirm the payment callback signature format, then set
    `PAYMENT_CALLBACK_STRICT=true`.
-3. Set `ALLOWED_ORIGIN` to the real mini-app origin.
-4. Sign in as the seeded Super Admin, change the password, create real
+4. Set `ALLOWED_ORIGIN` to the real mini-app origin.
+5. Sign in as the seeded Super Admin, change the password, create real
    accounts, and disable the seed account.
-5. Schedule `/api/cron/tick` every minute with a strong `CRON_SECRET`.
-6. Configure the SMS provider — until `SMS_API_URL` is set, messages are only
+6. Schedule `/api/cron/tick` every minute with a strong `CRON_SECRET`.
+7. Configure the SMS provider — until `SMS_API_URL` is set, messages are only
    logged.
-7. Use `prisma migrate` rather than `db push` once schema history matters.
-8. Review `frame-ancestors` in `src/proxy.ts`. It is currently `*` so the super
+8. Use `prisma migrate` rather than `db push` once schema history matters.
+9. Review `frame-ancestors` in `src/proxy.ts`. It is currently `*` so the super
    app can embed the mini-app in a webview; tighten it to the super-app origin
    if that origin is fixed.
 

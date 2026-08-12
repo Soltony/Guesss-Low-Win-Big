@@ -1,4 +1,4 @@
-// HowLow — Lowest Unique Bid Auction platform
+// GuessLow — Lowest Unique Bid Auction platform
 // Prisma schema. SQL Server does not support Prisma enums, so status-like
 // columns are Strings; the allowed values live in `src/lib/types.ts` as unions.
 

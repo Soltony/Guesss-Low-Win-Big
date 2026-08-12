@@ -16,7 +16,7 @@ const LanguageContext = createContext<LanguageContextValue>({
   t: (key) => translate(key, 'en'),
 });
 
-const STORAGE_KEY = 'howlow.lang';
+const STORAGE_KEY = 'guesslow.lang';
 
 export function LanguageProvider({
   children,

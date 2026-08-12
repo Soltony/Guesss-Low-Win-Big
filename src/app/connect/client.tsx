@@ -81,7 +81,7 @@ export function ConnectClient({
       <Loader2 className="h-8 w-8 animate-spin text-primary" />
       <div className="text-center">
         <h2 className="text-lg font-semibold">Connecting…</h2>
-        <p className="text-sm text-muted-foreground">Establishing your secure HowLow session.</p>
+        <p className="text-sm text-muted-foreground">Establishing your secure GuessLow session.</p>
       </div>
     </div>
   );

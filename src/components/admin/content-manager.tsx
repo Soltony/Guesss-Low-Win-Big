@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import { StatusBadge } from '@/components/admin/status-badge';
 import { EmptyRow, TableCard } from '@/components/admin/data-shell';
+import { ImageUploader } from '@/components/admin/image-uploader';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 
@@ -56,7 +57,7 @@ const blankBanner: BannerRow = {
 const blankTerms = {
   id: '',
   version: '',
-  title: 'HowLow Auction Terms & Conditions',
+  title: 'GuessLow Auction Terms & Conditions',
   contentEn: '',
   contentAm: '',
   active: true,
@@ -386,17 +387,13 @@ export function ContentManager({
                   }
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="b-image">Image URL</Label>
-                <Input
-                  id="b-image"
-                  required
-                  value={bannerForm.imageUrl}
-                  onChange={(event) =>
-                    setBannerForm({ ...bannerForm, imageUrl: event.target.value })
-                  }
-                />
-              </div>
+              <ImageUploader
+                label="Banner image"
+                description="Wide artwork reads best — around 1200×480."
+                required
+                value={bannerForm.imageUrl}
+                onChange={(imageUrl) => setBannerForm({ ...bannerForm, imageUrl })}
+              />
               <div className="space-y-1.5">
                 <Label htmlFor="b-link">Link URL</Label>
                 <Input

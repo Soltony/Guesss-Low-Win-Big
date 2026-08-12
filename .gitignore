@@ -21,3 +21,7 @@ next-env.d.ts
 .vscode/*
 !.vscode/extensions.json
 .idea
+
+# Uploaded artwork (served from /uploads)
+/public/uploads/*
+!/public/uploads/.gitkeep

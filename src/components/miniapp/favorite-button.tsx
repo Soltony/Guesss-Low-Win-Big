@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { Star } from 'lucide-react';
+import { Bookmark } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 
@@ -49,14 +49,12 @@ export function FavoriteButton({
       onClick={toggle}
       disabled={pending}
       aria-pressed={favorited}
-      aria-label={favorited ? 'Remove from watchlist' : 'Add to watchlist'}
-      className="flex h-10 w-10 items-center justify-center rounded-full bg-card shadow-md ring-1 ring-border transition hover:scale-105 disabled:opacity-60"
+      aria-label={favorited ? 'Remove from watchlist' : 'Save to watchlist'}
+      className="-m-1 shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
     >
-      <Star
-        className={cn(
-          'h-5 w-5 transition-colors',
-          favorited ? 'fill-accent text-accent' : 'text-muted-foreground'
-        )}
+      <Bookmark
+        className={cn('h-4 w-4', favorited && 'fill-primary text-primary')}
+        strokeWidth={1.75}
       />
     </button>
   );

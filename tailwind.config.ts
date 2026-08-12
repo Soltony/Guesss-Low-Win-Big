@@ -3,8 +3,13 @@ import type { Config } from 'tailwindcss';
 export default {
   darkMode: ['class'],
   content: [
-    './src/components/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/app/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/components/**/*.{ts,tsx}',
+    './src/app/**/*.{ts,tsx}',
+    // Route handlers and the lib layer never contain class names. Excluding
+    // them keeps Tailwind's watch set to files that actually matter, which
+    // also keeps API routes (the ones with [id] in the path) out of the
+    // stat loop that trips over files being rewritten mid-edit.
+    '!./src/app/api/**',
   ],
   theme: {
     extend: {
@@ -95,20 +100,12 @@ export default {
           from: { transform: 'translateY(0)' },
           to: { transform: 'translateY(100%)' },
         },
-        'pulse-live': {
-          '0%, 100%': { opacity: '1' },
-          '50%': { opacity: '0.45' },
-        },
-        shimmer: {
-          '100%': { transform: 'translateX(100%)' },
-        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
         'slide-in-from-bottom-full': 'slide-in-from-bottom-full 0.3s ease-out',
         'slide-out-to-bottom-full': 'slide-out-to-bottom-full 0.3s ease-out',
-        'pulse-live': 'pulse-live 1.6s ease-in-out infinite',
       },
     },
   },

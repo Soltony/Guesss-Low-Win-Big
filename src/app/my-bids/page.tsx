@@ -17,16 +17,16 @@ export default async function MyBidsPage() {
 
   if (!user) {
     return (
-      <MiniAppShell user={null} supportPhone={String(settings['platform.supportPhone'] || '8080')}>
+      <MiniAppShell user={null}>
         <div className="px-4 py-10">
           <EmptyState
             icon={Lock}
             title="Connect to see your bids"
-            description="Open HowLow from the super app so we can identify your account."
+            description="Open GuessLow from the super app so we can identify your account."
             action={
               <Link
                 href="/connect"
-                className="howlow-cta rounded-xl px-5 py-2.5 text-sm font-bold text-white"
+                className="rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
               >
                 Connect
               </Link>
@@ -121,7 +121,7 @@ export default async function MyBidsPage() {
     .reduce((sum, b) => sum + toNum(b.feeAmount), 0);
 
   return (
-    <MiniAppShell user={user} supportPhone={String(settings['platform.supportPhone'] || '8080')}>
+    <MiniAppShell user={user}>
       {entries.length === 0 ? (
         <div className="px-4 py-10">
           <EmptyState
@@ -131,7 +131,7 @@ export default async function MyBidsPage() {
             action={
               <Link
                 href="/auctions"
-                className="howlow-cta rounded-xl px-5 py-2.5 text-sm font-bold text-white"
+                className="rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
               >
                 Browse auctions
               </Link>

@@ -252,6 +252,11 @@ export interface BidderSessionPayload {
   bidderId: string;
   phone: string;
   superAppToken: string;
+  /**
+   * Session was created through the authorization bypass. Carried in the signed
+   * cookie so it cannot be forged, and checked wherever real money would move.
+   */
+  isTest?: boolean;
 }
 
 export async function createBidderSession(payload: BidderSessionPayload) {
@@ -267,7 +272,9 @@ export async function getBidderSession(): Promise<BidderSessionPayload | null> {
   const raw = store.get(MINIAPP_COOKIE)?.value;
   if (!raw) return null;
   const payload = await decryptJwt<BidderSessionPayload>(raw);
-  if (!payload?.bidderId || !payload?.superAppToken) return null;
+  if (!payload?.bidderId) return null;
+  // A real session always carries the super-app token; a test session has none.
+  if (!payload.isTest && !payload.superAppToken) return null;
   return payload;
 }
 

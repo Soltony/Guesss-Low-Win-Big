@@ -12,7 +12,6 @@ export default async function HomePage() {
   return (
     <MiniAppShell
       user={user}
-      supportPhone={String(home.settings['platform.supportPhone'] || '8080')}
     >
       <HomeView
         tagline={String(home.settings['platform.tagline'] || '')}

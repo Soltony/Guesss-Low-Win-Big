@@ -2,6 +2,7 @@ import Link from 'next/link';
 import {
   AlertTriangle,
   CheckSquare,
+  FlaskConical,
   Gavel,
   ListOrdered,
   Timer,
@@ -18,6 +19,7 @@ import { getDailyActivity, getDashboardMetrics, getTopAuctions } from '@/lib/das
 import { syncAuctionLifecycle } from '@/lib/auction-engine';
 import { getCurrentUser } from '@/lib/session';
 import { hasPermission } from '@/lib/permissions';
+import { isTestLoginEnabled } from '@/lib/test-login';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Dashboard' };
@@ -58,6 +60,18 @@ export default async function AdminDashboard() {
         title={`Welcome, ${user?.fullName?.split(' ')[0] ?? 'operator'}`}
         description="Live view of auctions, bidding activity and settlement workload."
       />
+
+      {isTestLoginEnabled() && (
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-accent/40 bg-accent/5 p-4 text-sm">
+          <FlaskConical className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+          <p>
+            <strong>Mini-app authorization bypass is enabled.</strong> Anyone who can reach{' '}
+            <code>/connect</code> can sign in as any phone number without a super-app token. Their
+            bids are marked <code>TEST</code> and charge no fee. Unset{' '}
+            <code>ALLOW_TEST_LOGIN</code> before going live.
+          </p>
+        </div>
+      )}
 
       {alerts.length > 0 && (
         <div className="mb-6 rounded-xl border border-warning/40 bg-warning/10 p-4">

@@ -2,17 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bell, Gavel, Globe, Home, Phone, Search, Trophy, User } from 'lucide-react';
+import { Gavel, Home, Search, Trophy, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LANGUAGES } from '@/lib/i18n';
 import { LanguageProvider, useLanguage } from './language-provider';
 import { Logo } from '@/components/icons';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import type { Language } from '@/lib/types';
 
 export interface ShellUser {
@@ -21,79 +15,71 @@ export interface ShellUser {
   fullName: string | null;
   language: Language;
   activeBids: number;
+  /** Session was created through the authorization bypass. */
+  isTest: boolean;
 }
 
-function LanguagePicker() {
+/** Two-state segmented control — clearer than a dropdown for exactly two languages. */
+function LanguageToggle() {
   const { lang, setLang } = useLanguage();
-  const current = LANGUAGES.find((l) => l.value === lang) ?? LANGUAGES[0];
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger className="flex items-center gap-1 rounded-full px-2 py-1 text-sm font-medium text-white/95 outline-none transition hover:bg-white/15 focus-visible:ring-2 focus-visible:ring-white/60">
-        <Globe className="h-4 w-4" />
-        <span>{current.short}</span>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
-        {LANGUAGES.map((l) => (
-          <DropdownMenuItem
-            key={l.value}
-            onClick={() => setLang(l.value)}
-            className={cn(lang === l.value && 'font-semibold text-primary')}
-          >
-            {l.label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div
+      className="flex items-center rounded-md border border-border p-0.5"
+      role="group"
+      aria-label="Language"
+    >
+      {LANGUAGES.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => setLang(option.value)}
+          aria-pressed={lang === option.value}
+          className={cn(
+            'rounded px-2 py-0.5 text-xs font-medium transition-colors',
+            lang === option.value
+              ? 'bg-secondary text-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          {option.short}
+        </button>
+      ))}
+    </div>
   );
 }
 
-function TopBar({ user, supportPhone }: { user: ShellUser | null; supportPhone: string }) {
+function TopBar({ user }: { user: ShellUser | null }) {
   return (
-    <div className="howlow-hero sticky top-0 z-30">
-      <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-2">
-          <a
-            href={`tel:${supportPhone}`}
-            aria-label="Call support"
-            className="rounded-full p-2 text-white transition hover:bg-white/15"
-          >
-            <Phone className="h-5 w-5" />
-          </a>
-          <LanguagePicker />
-          <Link
-            href="/my-bids"
-            aria-label="Notifications"
-            className="rounded-full p-2 text-white transition hover:bg-white/15"
-          >
-            <Bell className="h-5 w-5" />
-          </Link>
-        </div>
-
-        <Link href="/" className="flex items-center gap-1.5 text-white" aria-label="HowLow home">
-          <Logo className="h-6 w-6 text-white" />
-          <span className="text-base font-bold tracking-tight">HowLow</span>
+    <header className="sticky top-0 z-30 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
+      <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 py-3">
+        <Link href="/" className="flex items-center gap-2" aria-label="GuessLow home">
+          <Logo className="h-7 w-7 text-foreground" />
+          <span className="text-[15px] font-semibold tracking-tight">GuessLow</span>
         </Link>
 
-        <div className="flex items-center gap-2">
-          <Link
-            href="/my-bids"
-            className="flex items-center gap-1 rounded-full bg-white/95 px-3 py-1.5 text-sm font-bold text-primary shadow-sm transition hover:bg-white"
-            aria-label={`${user?.activeBids ?? 0} active bids`}
-          >
-            <Gavel className="h-4 w-4" />
-            {user?.activeBids ?? 0}
-          </Link>
-          <Link
-            href="/profile"
-            aria-label="Profile"
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-primary shadow-sm transition hover:bg-white"
-          >
-            <User className="h-5 w-5" />
-          </Link>
-        </div>
+        <div className="flex-1" />
+
+        <LanguageToggle />
+
+        <Link
+          href="/my-bids"
+          className="gl-pill hover:bg-secondary"
+          aria-label={`${user?.activeBids ?? 0} active bids`}
+        >
+          <Gavel className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="tabular-nums">{user?.activeBids ?? 0}</span>
+        </Link>
+
+        <Link
+          href="/profile"
+          aria-label="Profile"
+          className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+        >
+          <User className="h-4 w-4" />
+        </Link>
       </div>
-    </div>
+    </header>
   );
 }
 
@@ -110,27 +96,45 @@ function BottomNav() {
   const { t } = useLanguage();
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
+    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card">
       <div
         className="mx-auto grid w-full max-w-3xl grid-cols-5"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >
         {NAV.map((item) => {
-          const active =
-            item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+          const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
           const Icon = item.icon;
+
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={cn(
-                'flex flex-col items-center gap-0.5 px-1 py-2 text-[11px] font-medium transition-colors',
-                active ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
-              )}
               aria-current={active ? 'page' : undefined}
+              className="relative flex flex-col items-center gap-1 px-1 pb-2 pt-2.5"
             >
-              <Icon className={cn('h-5 w-5', active && 'stroke-[2.5]')} />
-              <span className="truncate">{t(item.label)}</span>
+              {/* The active marker is a short rule above the icon, so the bar
+                  stays quiet and nothing shifts as you navigate. */}
+              <span
+                className={cn(
+                  'absolute inset-x-0 top-0 mx-auto h-0.5 w-8 rounded-full transition-colors',
+                  active ? 'bg-primary' : 'bg-transparent'
+                )}
+              />
+              <Icon
+                className={cn(
+                  'h-[18px] w-[18px] transition-colors',
+                  active ? 'text-foreground' : 'text-muted-foreground'
+                )}
+                strokeWidth={active ? 2.25 : 1.75}
+              />
+              <span
+                className={cn(
+                  'truncate text-[10px] font-medium transition-colors',
+                  active ? 'text-foreground' : 'text-muted-foreground'
+                )}
+              >
+                {t(item.label)}
+              </span>
             </Link>
           );
         })}
@@ -142,17 +146,20 @@ function BottomNav() {
 export function MiniAppShell({
   children,
   user,
-  supportPhone = '8080',
 }: {
   children: React.ReactNode;
   user: ShellUser | null;
-  supportPhone?: string;
 }) {
   return (
     <LanguageProvider initialLang={user?.language ?? 'en'}>
       <div className="flex min-h-screen flex-col bg-background">
-        <TopBar user={user} supportPhone={supportPhone} />
-        <main className="mx-auto w-full max-w-3xl flex-1 pb-24">{children}</main>
+        {user?.isTest && (
+          <div className="bg-accent px-4 py-1.5 text-center text-[11px] font-semibold uppercase tracking-wide text-accent-foreground">
+            Test session — authorization bypassed, no fees are charged
+          </div>
+        )}
+        <TopBar user={user} />
+        <main className="mx-auto w-full max-w-3xl flex-1 pb-20">{children}</main>
         <BottomNav />
       </div>
     </LanguageProvider>

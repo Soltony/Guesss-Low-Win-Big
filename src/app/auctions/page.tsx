@@ -43,7 +43,7 @@ export default async function AuctionsPage({
   const favorites = await getFavoriteAuctionIds(user?.bidderId);
 
   return (
-    <MiniAppShell user={user} supportPhone={String(settings['platform.supportPhone'] || '8080')}>
+    <MiniAppShell user={user}>
       <AuctionsBrowser
         auctions={auctions}
         total={total}

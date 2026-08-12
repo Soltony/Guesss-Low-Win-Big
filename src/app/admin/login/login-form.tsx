@@ -48,7 +48,7 @@ export function LoginForm() {
     <Card>
       <CardHeader>
         <CardTitle>Sign in</CardTitle>
-        <CardDescription>Use your HowLow operations account.</CardDescription>
+        <CardDescription>Use your GuessLow operations account.</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={submit} className="space-y-4">
@@ -68,7 +68,7 @@ export function LoginForm() {
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@howlow.et"
+              placeholder="you@guesslow.et"
             />
           </div>
 

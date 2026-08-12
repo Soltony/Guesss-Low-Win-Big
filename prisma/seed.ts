@@ -1,5 +1,5 @@
 /**
- * HowLow database seed.
+ * GuessLow database seed.
  *
  * Idempotent: safe to re-run. Creates the role set, a bootstrap Super Admin,
  * the setting rows, notification templates, a starter catalogue and — unless
@@ -196,7 +196,7 @@ async function seedRoles() {
 }
 
 async function seedSuperAdmin() {
-  const email = (process.env.SEED_ADMIN_EMAIL || 'admin@howlow.et').toLowerCase();
+  const email = (process.env.SEED_ADMIN_EMAIL || 'admin@guesslow.et').toLowerCase();
   const phone = process.env.SEED_ADMIN_PHONE || '251900000001';
   const password = process.env.SEED_ADMIN_PASSWORD || 'ChangeMe!2026';
 
@@ -210,7 +210,7 @@ async function seedSuperAdmin() {
 
   await prisma.user.create({
     data: {
-      fullName: process.env.SEED_ADMIN_NAME || 'HowLow Administrator',
+      fullName: process.env.SEED_ADMIN_NAME || 'GuessLow Administrator',
       email,
       phoneNumber: phone,
       password: await bcrypt.hash(password, 12),
@@ -267,10 +267,10 @@ async function seedTerms() {
   await prisma.termsAndConditions.create({
     data: {
       version: '1.0',
-      title: 'HowLow Auction Terms & Conditions',
+      title: 'GuessLow Auction Terms & Conditions',
       active: true,
       contentEn: [
-        '1. HowLow is a Lowest Unique Bid Auction. The winner is the participant holding the lowest bid amount that no other participant has submitted.',
+        '1. GuessLow is a Lowest Unique Bid Auction. The winner is the participant holding the lowest bid amount that no other participant has submitted.',
         '2. A non-refundable service fee is charged for every bid placed. The fee is displayed on each auction before you bid.',
         '3. A bid is only counted once its service fee has been confirmed. Unpaid bids are void and do not affect the result.',
         '4. Bid amounts and their uniqueness status remain hidden until the auction closes.',
@@ -278,11 +278,11 @@ async function seedTerms() {
         '6. If no bid amount is unique when an auction closes, the auction has no winner and no prize is awarded.',
         '7. Winners must claim their prize within the claim window shown in the app. Unclaimed prizes may be forfeited and offered to the next-ranked unique bid.',
         '8. Winners must pay their winning bid amount and present valid identification matching the registered phone number to collect the prize.',
-        '9. HowLow may cancel an auction where technical failure, fraud or manipulation is detected. Service fees for cancelled auctions are refunded.',
+        '9. GuessLow may cancel an auction where technical failure, fraud or manipulation is detected. Service fees for cancelled auctions are refunded.',
         '10. Employees of the operator and their immediate families may not participate.',
       ].join('\n\n'),
       contentAm: [
-        '1. HowLow ዝቅተኛ ልዩ ጨረታ መድረክ ነው። አሸናፊው ሌላ ማንም ያላቀረበውን ዝቅተኛ የጨረታ መጠን ያቀረበ ተሳታፊ ነው።',
+        '1. GuessLow ዝቅተኛ ልዩ ጨረታ መድረክ ነው። አሸናፊው ሌላ ማንም ያላቀረበውን ዝቅተኛ የጨረታ መጠን ያቀረበ ተሳታፊ ነው።',
         '2. ለእያንዳንዱ ጨረታ ተመላሽ የማይደረግ የአገልግሎት ክፍያ ይከፈላል። ክፍያው ከመጫረትዎ በፊት በእያንዳንዱ ጨረታ ላይ ይታያል።',
         '3. ጨረታ የሚቆጠረው የአገልግሎት ክፍያው ሲረጋገጥ ብቻ ነው። ያልተከፈለ ጨረታ ዋጋ የለውም።',
         '4. የጨረታ መጠኖችና የልዩነት ሁኔታቸው ጨረታው እስኪዘጋ ድረስ ተደብቀው ይቆያሉ።',
@@ -290,7 +290,7 @@ async function seedTerms() {
         '6. ጨረታው ሲዘጋ ልዩ የሆነ መጠን ከሌለ አሸናፊ አይኖርም።',
         '7. አሸናፊዎች በመተግበሪያው በተገለጸው ጊዜ ውስጥ ሽልማታቸውን መጠየቅ አለባቸው።',
         '8. አሸናፊዎች ያሸነፉበትን መጠን መክፈልና ከተመዘገበው ስልክ ቁጥር ጋር የሚዛመድ ትክክለኛ መታወቂያ ማቅረብ አለባቸው።',
-        '9. HowLow የቴክኒክ ብልሽት፣ ማጭበርበር ወይም ተጽዕኖ ሲያጋጥም ጨረታን መሰረዝ ይችላል።',
+        '9. GuessLow የቴክኒክ ብልሽት፣ ማጭበርበር ወይም ተጽዕኖ ሲያጋጥም ጨረታን መሰረዝ ይችላል።',
         '10. የአስተዳዳሪው ሰራተኞችና ቤተሰቦቻቸው መሳተፍ አይችሉም።',
       ].join('\n\n'),
     },
@@ -387,7 +387,7 @@ async function seedDemoAuctions() {
 }
 
 async function main() {
-  console.log('Seeding HowLow…\n');
+  console.log('Seeding GuessLow…\n');
   await seedRoles();
   await seedSuperAdmin();
   await seedSettings();
