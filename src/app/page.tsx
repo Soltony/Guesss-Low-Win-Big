@@ -1,0 +1,28 @@
+import { MiniAppShell } from '@/components/miniapp/mini-app-shell';
+import { HomeView } from '@/components/miniapp/home-view';
+import { getHomeData } from '@/lib/miniapp-data';
+import { getFavoriteAuctionIds, getShellUser } from '@/lib/miniapp-user';
+
+export const dynamic = 'force-dynamic';
+
+export default async function HomePage() {
+  const [user, home] = await Promise.all([getShellUser(), getHomeData()]);
+  const favorites = await getFavoriteAuctionIds(user?.bidderId);
+
+  return (
+    <MiniAppShell
+      user={user}
+      supportPhone={String(home.settings['platform.supportPhone'] || '8080')}
+    >
+      <HomeView
+        tagline={String(home.settings['platform.tagline'] || '')}
+        categories={home.categories}
+        featured={home.featured}
+        endingSoon={home.endingSoon}
+        recentWinners={home.recentWinners}
+        favorites={Array.from(favorites)}
+        stats={home.stats}
+      />
+    </MiniAppShell>
+  );
+}

@@ -1,0 +1,218 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Ban, Loader2, Rocket, Star, Trophy } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { useToast } from '@/hooks/use-toast';
+
+interface Props {
+  auction: {
+    id: string;
+    code: string;
+    status: string;
+    featured: boolean;
+    bidCount: number;
+  };
+  canUpdate: boolean;
+  canSettle: boolean;
+}
+
+export function AuctionActions({ auction, canUpdate, canSettle }: Props) {
+  const router = useRouter();
+  const { toast } = useToast();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [settleOpen, setSettleOpen] = useState(false);
+  const [reason, setReason] = useState('');
+
+  const run = async (action: string, body: Record<string, unknown> = {}) => {
+    setBusy(action);
+    try {
+      const response = await fetch(`/api/admin/auctions/${auction.id}/actions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ...body }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        toast({ variant: 'destructive', title: 'Action failed', description: data?.error });
+        return;
+      }
+
+      toast({
+        title: data.pending ? 'Sent for approval' : 'Done',
+        description:
+          data.message ||
+          (action === 'settle' || action === 'resettle'
+            ? data.result?.winnerBidId
+              ? `Winner determined at ${data.result.winningAmount?.toFixed(2)}.`
+              : 'Settled — no unique bid, so there is no winner.'
+            : undefined),
+      });
+
+      setCancelOpen(false);
+      setSettleOpen(false);
+      setReason('');
+      router.refresh();
+    } catch {
+      toast({ variant: 'destructive', title: 'Network error' });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const canPublish =
+    canUpdate && (auction.status === 'DRAFT' || auction.status === 'PENDING_APPROVAL');
+  const canCancel =
+    canUpdate && !['SETTLED', 'CANCELLED'].includes(auction.status);
+  const canSettleNow = canSettle && auction.status === 'ENDED';
+  const canResettle = canSettle && auction.status === 'SETTLED';
+
+  if (!canPublish && !canCancel && !canSettleNow && !canResettle && !canUpdate) return null;
+
+  return (
+    <>
+      <div className="space-y-2 rounded-xl border border-border bg-card p-4">
+        <h2 className="font-semibold">Actions</h2>
+
+        {canPublish && (
+          <Button className="w-full" onClick={() => run('publish')} disabled={busy !== null}>
+            {busy === 'publish' ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Rocket className="mr-2 h-4 w-4" />
+            )}
+            Publish auction
+          </Button>
+        )}
+
+        {canSettleNow && (
+          <Button
+            className="w-full"
+            variant="default"
+            onClick={() => setSettleOpen(true)}
+            disabled={busy !== null}
+          >
+            <Trophy className="mr-2 h-4 w-4" />
+            Settle &amp; determine winner
+          </Button>
+        )}
+
+        {canResettle && (
+          <Button
+            className="w-full"
+            variant="outline"
+            onClick={() => setSettleOpen(true)}
+            disabled={busy !== null}
+          >
+            <Trophy className="mr-2 h-4 w-4" />
+            Re-settle auction
+          </Button>
+        )}
+
+        {canUpdate && (
+          <Button
+            className="w-full"
+            variant="outline"
+            onClick={() => run('feature', { featured: !auction.featured })}
+            disabled={busy !== null}
+          >
+            <Star className="mr-2 h-4 w-4" />
+            {auction.featured ? 'Remove from featured' : 'Mark as featured'}
+          </Button>
+        )}
+
+        {canCancel && (
+          <Button
+            className="w-full"
+            variant="destructive"
+            onClick={() => setCancelOpen(true)}
+            disabled={busy !== null}
+          >
+            <Ban className="mr-2 h-4 w-4" />
+            Cancel auction
+          </Button>
+        )}
+      </div>
+
+      <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel auction #{auction.code}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {auction.bidCount > 0
+                ? `This auction already has ${auction.bidCount} confirmed bid(s). Cancelling means no winner is determined — the fees already collected will need to be refunded through the payments module.`
+                : 'The auction will be closed and removed from the mini-app.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <Textarea
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Reason for cancellation (recorded in the audit log)"
+            rows={3}
+          />
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep auction</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!reason.trim() || busy !== null}
+              onClick={(event) => {
+                event.preventDefault();
+                run('cancel', { reason });
+              }}
+            >
+              {busy === 'cancel' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Cancel auction
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={settleOpen} onOpenChange={setSettleOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {canResettle ? 'Re-settle' : 'Settle'} auction #{auction.code}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Every confirmed bid is grouped by amount. Amounts held by exactly one bidder are
+              unique; the lowest of those wins. Bid statuses become visible to bidders once this
+              runs.
+              {canResettle &&
+                ' Re-settling discards the existing result and winner record, then recomputes from scratch.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Not now</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy !== null}
+              onClick={(event) => {
+                event.preventDefault();
+                run(canResettle ? 'resettle' : 'settle');
+              }}
+            >
+              {(busy === 'settle' || busy === 'resettle') && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              {canResettle ? 'Re-settle' : 'Settle now'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
