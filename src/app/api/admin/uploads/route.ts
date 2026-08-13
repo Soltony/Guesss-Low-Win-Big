@@ -6,6 +6,7 @@ import { getCurrentUser } from '@/lib/session';
 import { hasPermission } from '@/lib/permissions';
 import { jsonError } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
+import { ALLOWED_IMAGE_TYPES, uploadsDir } from '@/lib/uploads';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -14,13 +15,7 @@ const MAX_BYTES = 5 * 1024 * 1024;
 
 // SVG is deliberately excluded: it can carry script and would execute when
 // served from our own origin.
-const ALLOWED: Record<string, string> = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/webp': 'webp',
-  'image/gif': 'gif',
-  'image/avif': 'avif',
-};
+const ALLOWED = ALLOWED_IMAGE_TYPES;
 
 /** Modules whose editors are allowed to upload artwork. */
 const UPLOAD_MODULES = ['items', 'categories', 'content'] as const;
@@ -85,7 +80,7 @@ export async function POST(req: NextRequest) {
   // The filename is generated, never taken from the upload, so path traversal
   // and overwrites are impossible by construction.
   const filename = `${randomUUID()}.${ALLOWED[detected]}`;
-  const directory = path.join(process.cwd(), 'public', 'uploads');
+  const directory = uploadsDir();
 
   try {
     await mkdir(directory, { recursive: true });
