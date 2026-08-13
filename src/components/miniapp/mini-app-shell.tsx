@@ -1,8 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Gavel, Home, Search, Trophy, User } from 'lucide-react';
+import { Gavel, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LANGUAGES } from '@/lib/i18n';
 import { LanguageProvider, useLanguage } from './language-provider';
@@ -85,61 +84,6 @@ function TopBar({ user }: { user: ShellUser | null }) {
   );
 }
 
-const NAV = [
-  { href: '/', label: 'nav.home', icon: Home },
-  { href: '/auctions', label: 'nav.auctions', icon: Search },
-  { href: '/my-bids', label: 'nav.myBids', icon: Gavel },
-  { href: '/wins', label: 'nav.wins', icon: Trophy },
-  { href: '/profile', label: 'nav.profile', icon: User },
-] as const;
-
-function BottomNav() {
-  const pathname = usePathname();
-  const { t } = useLanguage();
-
-  return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 backdrop-blur">
-      <div
-        className="mx-auto grid w-full max-w-3xl grid-cols-5 px-1 pt-1.5"
-        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.375rem)' }}
-      >
-        {NAV.map((item) => {
-          const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
-          const Icon = item.icon;
-
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={active ? 'page' : undefined}
-              className="flex flex-col items-center gap-1 py-1"
-            >
-              {/* The active item gets a filled gold tile — unmistakable at a
-                  glance, and nothing reflows as you move between tabs. */}
-              <span
-                className={cn(
-                  'flex h-8 w-12 items-center justify-center rounded-full transition-colors',
-                  active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'
-                )}
-              >
-                <Icon className="h-[18px] w-[18px]" strokeWidth={active ? 2.4 : 1.8} />
-              </span>
-              <span
-                className={cn(
-                  'truncate text-[10px] transition-colors',
-                  active ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground'
-                )}
-              >
-                {t(item.label)}
-              </span>
-            </Link>
-          );
-        })}
-      </div>
-    </nav>
-  );
-}
-
 export function MiniAppShell({
   children,
   user,
@@ -156,8 +100,12 @@ export function MiniAppShell({
           </div>
         )}
         <TopBar user={user} />
-        <main className="mx-auto w-full max-w-3xl flex-1 pb-24">{children}</main>
-        <BottomNav />
+        <main
+          className="mx-auto w-full max-w-3xl flex-1"
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 1.5rem)' }}
+        >
+          {children}
+        </main>
       </div>
     </LanguageProvider>
   );
