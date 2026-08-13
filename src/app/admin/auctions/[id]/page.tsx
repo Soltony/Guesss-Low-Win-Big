@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { getCurrentUser } from '@/lib/session';
 import { hasPermission } from '@/lib/permissions';
 import { syncAuctionLifecycle, rankUniqueBids } from '@/lib/auction-engine';
+import { lineageRounds } from '@/lib/reauction';
 import { maskPhone, toNum } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -56,7 +57,7 @@ export default async function AdminAuctionDetail({
   const canSettle = hasPermission(user, 'auctions', 'approve');
   const canSeeBids = hasPermission(user, 'bids', 'read');
 
-  const [paidFees, recentBids, distribution] = await Promise.all([
+  const [paidFees, recentBids, distribution, rounds, credits] = await Promise.all([
     prisma.bid.aggregate({
       where: { auctionId: id, status: 'ACTIVE' },
       _sum: { feeAmount: true },
@@ -77,6 +78,13 @@ export default async function AdminAuctionDetail({
           orderBy: { createdAt: 'asc' },
         })
       : Promise.resolve([]),
+    lineageRounds(auction),
+    prisma.bidCredit.findMany({
+      where: { auctionId: id },
+      orderBy: { granted: 'desc' },
+      take: 25,
+      include: { bidder: { select: { phoneNumber: true, fullName: true } } },
+    }),
   ]);
 
   const preview =
@@ -92,6 +100,16 @@ export default async function AdminAuctionDetail({
       : [];
 
   const currency = auction.currency === 'ETB' ? 'Br' : auction.currency;
+
+  const carriedGranted = credits.reduce((sum, credit) => sum + credit.granted, 0);
+  const carriedRemaining = credits.reduce((sum, credit) => sum + credit.remaining, 0);
+  const carriedValue = credits.reduce(
+    (sum, credit) => sum + credit.granted * toNum(credit.unitFee),
+    0
+  );
+  // Anything past the original round, or a chain that has been decided one way
+  // or another, is worth showing; a plain draft auction is not.
+  const showLineage = rounds.length > 1 || auction.reauctionEnabled;
 
   return (
     <>
@@ -157,6 +175,16 @@ export default async function AdminAuctionDetail({
                 </p>
               </div>
 
+              {/* A round can rank bids and still award nothing — that is what a
+                  participation floor does. Say so rather than showing rank 1
+                  with a claim status it never got. */}
+              {auction.results.length > 0 && !auction.winner && (
+                <p className="border-b border-border bg-secondary/40 px-4 py-2.5 text-xs text-muted-foreground">
+                  No winner was awarded.{' '}
+                  {auction.reauctionReason ?? 'The round did not produce a valid result.'}
+                </p>
+              )}
+
               {auction.results.length === 0 ? (
                 <p className="px-4 py-8 text-center text-sm text-muted-foreground">
                   No unique bid was placed — this auction has no winner.
@@ -185,10 +213,12 @@ export default async function AdminAuctionDetail({
                           {toNum(result.amount).toFixed(2)} {currency}
                         </td>
                         <td className="px-4 py-2.5">
-                          {result.rank === 1 ? (
-                            <StatusBadge status={auction.winner?.status ?? 'PENDING_CLAIM'} />
-                          ) : (
+                          {result.rank !== 1 ? (
                             <span className="text-xs text-muted-foreground">Runner-up</span>
+                          ) : auction.winner ? (
+                            <StatusBadge status={auction.winner.status} />
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Not awarded</span>
                           )}
                         </td>
                       </tr>
@@ -221,6 +251,133 @@ export default async function AdminAuctionDetail({
                       <td className="px-4 py-2.5 font-bold tabular-nums">#{entry.rank}</td>
                       <td className="px-4 py-2.5 text-right font-bold tabular-nums">
                         {entry.amount.toFixed(2)} {currency}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableCard>
+          )}
+
+          {/* Re-auction chain */}
+          {showLineage && (
+            <TableCard>
+              <div className="border-b border-border px-4 py-3">
+                <h2 className="font-semibold">Re-auction chain</h2>
+                <p className="text-xs text-muted-foreground">
+                  {auction.reauctionEnabled
+                    ? `Round ${auction.reauctionRound + 1} of at most ${auction.maxReauctionRounds + 1} · ${auction.reauctionDurationHours}h per re-run · ${
+                        auction.reauctionAllowNewBidders ? 'new' : 'no new'
+                      } bidders, ${
+                        auction.reauctionAllowPreviousBidders ? 'previous' : 'no previous'
+                      } bidders`
+                    : 'Re-auction is switched off for this auction.'}
+                </p>
+              </div>
+
+              {auction.reauctionReason && (
+                <p className="border-b border-border bg-secondary/40 px-4 py-2.5 text-xs text-muted-foreground">
+                  <span className="font-semibold text-foreground">
+                    {auction.reauctionState.replace(/_/g, ' ').toLowerCase()}
+                  </span>{' '}
+                  — {auction.reauctionReason}
+                </p>
+              )}
+
+              <table className="w-full text-sm">
+                <thead className="border-b border-border bg-secondary/50 text-left">
+                  <tr>
+                    <th className="px-4 py-2.5 font-semibold">Round</th>
+                    <th className="px-4 py-2.5 font-semibold">Auction</th>
+                    <th className="px-4 py-2.5 text-right font-semibold">Bids</th>
+                    <th className="px-4 py-2.5 font-semibold">Status</th>
+                    <th className="px-4 py-2.5 font-semibold">Outcome</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {rounds.map((round) => (
+                    <tr key={round.id} className={round.id === auction.id ? 'bg-primary/5' : ''}>
+                      <td className="px-4 py-2.5 font-bold tabular-nums">
+                        {round.reauctionRound === 0 ? 'Original' : `R${round.reauctionRound}`}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {round.id === auction.id ? (
+                          <span className="font-mono">#{round.code}</span>
+                        ) : (
+                          <Link
+                            href={`/admin/auctions/${round.id}`}
+                            className="font-mono hover:text-primary"
+                          >
+                            #{round.code}
+                          </Link>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">
+                        {round.bidCount}
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          / {round.bidderCount} bidder(s)
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <StatusBadge status={round.status} />
+                      </td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground">
+                        {round.winnerBidId
+                          ? 'Winner awarded'
+                          : round.status === 'SETTLED'
+                            ? round.reauctionState === 'CREATED'
+                              ? 'No winner — re-auctioned'
+                              : round.reauctionState === 'PENDING'
+                                ? 'No winner — awaiting re-auction'
+                                : 'No winner'
+                            : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableCard>
+          )}
+
+          {/* Carried-forward bids */}
+          {credits.length > 0 && (
+            <TableCard>
+              <div className="border-b border-border px-4 py-3">
+                <h2 className="font-semibold">Carried-forward bids</h2>
+                <p className="text-xs text-muted-foreground">
+                  {carriedGranted} paid bid(s) worth {carriedValue.toFixed(2)} {currency} carried
+                  into this round for {credits.length} bidder(s); {carriedRemaining} still unspent.
+                  These bids are not charged again.
+                </p>
+              </div>
+              <table className="w-full text-sm">
+                <thead className="border-b border-border bg-secondary/50 text-left">
+                  <tr>
+                    <th className="px-4 py-2.5 font-semibold">Bidder</th>
+                    <th className="px-4 py-2.5 text-right font-semibold">Carried</th>
+                    <th className="px-4 py-2.5 text-right font-semibold">Used</th>
+                    <th className="px-4 py-2.5 text-right font-semibold">Left</th>
+                    <th className="px-4 py-2.5 text-right font-semibold">Value</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {credits.map((credit) => (
+                    <tr key={credit.id}>
+                      <td className="px-4 py-2.5">
+                        <Link
+                          href={`/admin/bidders/${credit.bidderId}`}
+                          className="hover:text-primary"
+                        >
+                          {credit.bidder.fullName || maskPhone(credit.bidder.phoneNumber)}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
+                        {credit.granted}
+                      </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{credit.consumed}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{credit.remaining}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">
+                        {(credit.granted * toNum(credit.unitFee)).toFixed(2)} {currency}
                       </td>
                     </tr>
                   ))}
@@ -293,6 +450,9 @@ export default async function AdminAuctionDetail({
               status: auction.status,
               featured: auction.featured,
               bidCount: auction.bidCount,
+              reauctionState: auction.reauctionState,
+              reauctionRound: auction.reauctionRound,
+              maxReauctionRounds: auction.maxReauctionRounds,
             }}
             canUpdate={canUpdate}
             canSettle={canSettle}
@@ -309,6 +469,18 @@ export default async function AdminAuctionDetail({
                 ['Category', auction.category.name],
                 ['Bid fee', `${toNum(auction.bidFee).toFixed(2)} ${currency}`],
                 ['Max bids / bidder', String(auction.maxBidsPerUser)],
+                [
+                  'Max bids / auction',
+                  auction.maxTotalBids > 0
+                    ? `${auction.bidCount} / ${auction.maxTotalBids}`
+                    : 'Unlimited',
+                ],
+                [
+                  'Re-auction',
+                  auction.reauctionEnabled
+                    ? `On · up to ${auction.maxReauctionRounds} round(s) of ${auction.reauctionDurationHours}h`
+                    : 'Off',
+                ],
                 ['Auto-extend', auction.autoExtendMinutes ? `${auction.autoExtendMinutes} min` : 'Off'],
                 ['Times extended', String(auction.extendedCount)],
                 ['Starts', auction.startAt.toLocaleString('en-GB')],

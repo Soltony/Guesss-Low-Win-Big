@@ -30,6 +30,7 @@ export const SETTING_CATEGORIES = [
   'bidding',
   'reveal',
   'winners',
+  'reauction',
   'payments',
   'notifications',
   'security',
@@ -41,6 +42,7 @@ export const CATEGORY_LABELS: Record<SettingCategory, string> = {
   bidding: 'Bidding Rules',
   reveal: 'Bid Visibility',
   winners: 'Winners & Claims',
+  reauction: 'Re-Auction',
   payments: 'Payments',
   notifications: 'Notifications',
   security: 'Security & Governance',
@@ -161,6 +163,17 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     default: 100,
     min: 1,
     max: 1000,
+    step: 1,
+  },
+  {
+    key: 'bidding.defaultMaxTotalBids',
+    label: 'Default max bids per auction',
+    description:
+      'Total bids a new auction accepts from everyone combined, before it stops taking bids. 0 means unlimited.',
+    category: 'bidding',
+    type: 'number',
+    default: 0,
+    min: 0,
     step: 1,
   },
   {
@@ -316,6 +329,99 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     default: true,
   },
 
+  // ---- Re-auction ----
+  {
+    key: 'reauction.autoCreate',
+    label: 'Create re-auctions automatically',
+    description:
+      'Master switch. When off, an auction that ends without a winner is only flagged for re-auction; an operator opens the next round by hand.',
+    category: 'reauction',
+    type: 'boolean',
+    default: true,
+    sensitive: true,
+  },
+  {
+    key: 'reauction.autoPublish',
+    label: 'Publish re-auctions immediately',
+    description:
+      'Open the new round to bidders as soon as it is created. When off it is saved as a draft for review, and carried-forward bids wait with it.',
+    category: 'reauction',
+    type: 'boolean',
+    default: true,
+  },
+  {
+    key: 'reauction.defaultEnabled',
+    label: 'Enable re-auction on new auctions',
+    description: 'Pre-fills the re-auction switch when an auction is created.',
+    category: 'reauction',
+    type: 'boolean',
+    default: false,
+  },
+  {
+    key: 'reauction.defaultMaxRounds',
+    label: 'Default max re-auction rounds',
+    description:
+      'How many times one auction may be re-run before it is closed for good with no winner.',
+    category: 'reauction',
+    type: 'number',
+    default: 1,
+    min: 1,
+    max: 20,
+    step: 1,
+  },
+  {
+    key: 'reauction.defaultDurationHours',
+    label: 'Default re-auction duration (hours)',
+    description: 'How long each re-auction round stays open.',
+    category: 'reauction',
+    type: 'number',
+    default: 24,
+    min: 1,
+    max: 2160,
+    step: 1,
+  },
+  {
+    key: 'reauction.defaultStartDelayMinutes',
+    label: 'Default re-auction start delay (minutes)',
+    description:
+      'Gap between the previous round settling and the new round opening, so bidders can be notified first. 0 starts it immediately.',
+    category: 'reauction',
+    type: 'number',
+    default: 0,
+    min: 0,
+    max: 10080,
+    step: 1,
+  },
+  {
+    key: 'reauction.defaultAllowNewBidders',
+    label: 'Let new bidders join re-auctions',
+    description:
+      'When off, only bidders from an earlier round of the same auction may bid in the re-run.',
+    category: 'reauction',
+    type: 'boolean',
+    default: true,
+  },
+  {
+    key: 'reauction.defaultAllowPreviousBidders',
+    label: 'Let previous bidders join re-auctions',
+    description:
+      'When off, everyone who bid in an earlier round is excluded from the re-run and no bids are carried forward.',
+    category: 'reauction',
+    type: 'boolean',
+    default: true,
+  },
+  {
+    key: 'reauction.defaultMinBids',
+    label: 'Minimum bids for a valid result',
+    description:
+      'A round that closes with fewer confirmed bids than this has no valid winner and is re-auctioned. 0 disables the floor.',
+    category: 'reauction',
+    type: 'number',
+    default: 0,
+    min: 0,
+    step: 1,
+  },
+
   // ---- Payments ----
   {
     key: 'payments.enabled',
@@ -396,6 +502,15 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     key: 'notifications.onWin',
     label: 'Notify the winner',
     description: 'Message the winning bidder as soon as an auction is settled.',
+    category: 'notifications',
+    type: 'boolean',
+    default: true,
+  },
+  {
+    key: 'notifications.onReauction',
+    label: 'Notify on re-auction',
+    description:
+      'Tell everyone who bid in the previous round that the auction is being re-run, whether they can take part, and how many paid bids carried forward.',
     category: 'notifications',
     type: 'boolean',
     default: true,

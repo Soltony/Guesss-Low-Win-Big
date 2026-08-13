@@ -32,6 +32,7 @@ export function AuctionsBrowser({
   query,
   connected = false,
   bidCounts = {},
+  carriedBids = {},
 }: {
   auctions: PublicAuction[];
   total: number;
@@ -44,6 +45,8 @@ export function AuctionsBrowser({
   connected?: boolean;
   /** Bids the signed-in bidder already holds, keyed by auction id. */
   bidCounts?: Record<string, number>;
+  /** Prepaid bids carried into a re-auction, keyed by auction id. */
+  carriedBids?: Record<string, number>;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -171,6 +174,7 @@ export function AuctionsBrowser({
               index={index}
               connected={connected}
               bidsUsed={bidCounts[auction.id] ?? 0}
+              carriedBids={carriedBids[auction.id] ?? 0}
             />
           ))
         )}

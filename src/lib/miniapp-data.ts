@@ -1,6 +1,7 @@
 import prisma from './prisma';
 import { getSettings } from './settings';
 import { syncAuctionLifecycle } from './auction-engine';
+import { carriedBidsRemaining, reauctionEligibility } from './reauction';
 import { firstImage, toNum } from './format';
 import type { AuctionStatus } from './types';
 
@@ -28,12 +29,20 @@ export interface PublicAuction {
   maxBidAmount: number;
   bidStep: number;
   maxBidsPerUser: number;
+  /** 0 = unlimited. Bidding closes once this many bids are in. */
+  maxTotalBids: number;
   currency: string;
   startAt: string;
   endAt: string;
   bidCount: number | null;
   viewCount: number | null;
   featured: boolean;
+  /** 0 for an original auction, 1+ for each re-run of it. */
+  reauctionRound: number;
+  reauctionAllowNewBidders: boolean;
+  reauctionAllowPreviousBidders: boolean;
+  /** Code of the round this one re-runs, so the app can explain where it came from. */
+  parentCode: string | null;
 }
 
 const PUBLIC_STATUSES: AuctionStatus[] = ['SCHEDULED', 'LIVE', 'ENDED', 'SETTLED'];
@@ -68,18 +77,24 @@ function mapAuction(
     maxBidAmount: toNum(auction.maxBidAmount),
     bidStep: toNum(auction.bidStep),
     maxBidsPerUser: auction.maxBidsPerUser,
+    maxTotalBids: auction.maxTotalBids,
     currency: auction.currency,
     startAt: auction.startAt.toISOString(),
     endAt: auction.endAt.toISOString(),
     bidCount: settings['reveal.showBidCount'] ? auction.bidCount : null,
     viewCount: settings['reveal.showViewCount'] ? auction.viewCount : null,
     featured: auction.featured,
+    reauctionRound: auction.reauctionRound,
+    reauctionAllowNewBidders: auction.reauctionAllowNewBidders,
+    reauctionAllowPreviousBidders: auction.reauctionAllowPreviousBidders,
+    parentCode: auction.parentAuction?.code ?? null,
   };
 }
 
 const auctionInclude = {
   item: { select: { images: true, description: true, retailPrice: true } },
   category: { select: { name: true } },
+  parentAuction: { select: { code: true } },
 } as const;
 
 export interface BrowseOptions {
@@ -262,6 +277,52 @@ function maskPhoneLocal(phone: string) {
   return `${digits.slice(0, 4)}${'*'.repeat(Math.max(0, digits.length - 6))}${digits.slice(-2)}`;
 }
 
+export interface BidderAuctionContext {
+  /** Bids already paid for in an earlier round that this bidder can still spend here. */
+  carriedBids: number;
+  /** The bidder is allowed to bid in this round at all. */
+  eligible: boolean;
+  eligibilityReason: string | null;
+  /** They bid in an earlier round of this chain. */
+  returning: boolean;
+}
+
+/**
+ * What a re-auction means for one bidder: how many of their paid bids came with
+ * them, and whether this round is open to them at all. Only the mini-app calls
+ * this, and only for the bidder it belongs to.
+ */
+export async function getBidderAuctionContext(
+  bidderId: string,
+  auctionId: string
+): Promise<BidderAuctionContext> {
+  const auction = await prisma.auction.findUnique({
+    where: { id: auctionId },
+    select: {
+      id: true,
+      originalAuctionId: true,
+      reauctionRound: true,
+      reauctionAllowNewBidders: true,
+      reauctionAllowPreviousBidders: true,
+    },
+  });
+  if (!auction || auction.reauctionRound === 0) {
+    return { carriedBids: 0, eligible: true, eligibilityReason: null, returning: false };
+  }
+
+  const [carriedBids, participation] = await Promise.all([
+    carriedBidsRemaining(bidderId, auctionId),
+    reauctionEligibility(auction, bidderId),
+  ]);
+
+  return {
+    carriedBids,
+    eligible: participation.eligible,
+    eligibilityReason: participation.reason ?? null,
+    returning: participation.returning,
+  };
+}
+
 /** The signed-in bidder's own bids on one auction. */
 export async function getMyBidsForAuction(bidderId: string, auctionId: string) {
   const bids = await prisma.bid.findMany({
@@ -271,6 +332,7 @@ export async function getMyBidsForAuction(bidderId: string, auctionId: string) {
       id: true,
       amount: true,
       feeAmount: true,
+      carriedOver: true,
       status: true,
       sequence: true,
       createdAt: true,
@@ -283,6 +345,7 @@ export async function getMyBidsForAuction(bidderId: string, auctionId: string) {
     id: b.id,
     amount: toNum(b.amount),
     feeAmount: toNum(b.feeAmount),
+    carriedOver: b.carriedOver,
     status: b.status,
     sequence: b.sequence,
     createdAt: b.createdAt.toISOString(),

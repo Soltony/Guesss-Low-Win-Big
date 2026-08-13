@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { isGuardFailure, jsonError, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
 import { diffFields } from '@/lib/approvals';
+import { REAUCTION_FIELDS, parseReauctionConfig } from '@/lib/reauction';
 import { round2, toNum } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -42,6 +43,7 @@ const EDITABLE_BEFORE_BIDS = [
   'maxBidAmount',
   'bidStep',
   'maxBidsPerUser',
+  'maxTotalBids',
   'startAt',
   'endAt',
   'autoExtendMinutes',
@@ -101,7 +103,11 @@ export async function PATCH(
       const date = new Date(body[field]);
       if (Number.isNaN(date.getTime())) return jsonError(`${field} must be a valid date.`, 400);
       data[field] = date;
-    } else if (field === 'maxBidsPerUser' || field === 'autoExtendMinutes') {
+    } else if (
+      field === 'maxBidsPerUser' ||
+      field === 'maxTotalBids' ||
+      field === 'autoExtendMinutes'
+    ) {
       data[field] = Math.max(0, Math.trunc(Number(body[field]) || 0));
     } else if (field === 'itemId') {
       const item = await prisma.item.findUnique({ where: { id: String(body[field]) } });
@@ -110,6 +116,19 @@ export async function PATCH(
       data.categoryId = item.categoryId;
     } else {
       data[field] = round2(Number(body[field]));
+    }
+  }
+
+  // Re-auction rules stay editable while bids are live: switching a re-run on
+  // only ever gives bidders a second round on fees they have already paid, so
+  // it cannot re-price a bid the way the money rules above would.
+  if (REAUCTION_FIELDS.some((field) => body[field] !== undefined)) {
+    const parsed = parseReauctionConfig(body, auction);
+    if ('error' in parsed) return jsonError(parsed.error, 400);
+    for (const field of REAUCTION_FIELDS) {
+      if (parsed.config[field] === auction[field]) continue;
+      previous[field] = auction[field];
+      data[field] = parsed.config[field];
     }
   }
 
@@ -122,6 +141,18 @@ export async function PATCH(
   const min = data.minBidAmount !== undefined ? Number(data.minBidAmount) : toNum(auction.minBidAmount);
   const max = data.maxBidAmount !== undefined ? Number(data.maxBidAmount) : toNum(auction.maxBidAmount);
   if (max <= min) return jsonError('Maximum bid must be greater than the minimum bid.', 400);
+
+  const perBidder =
+    data.maxBidsPerUser !== undefined ? Number(data.maxBidsPerUser) : auction.maxBidsPerUser;
+  const perAuction =
+    data.maxTotalBids !== undefined ? Number(data.maxTotalBids) : auction.maxTotalBids;
+  if (perBidder < 1) return jsonError('Max bids per bidder must be at least 1.', 400);
+  if (perAuction > 0 && perAuction < perBidder) {
+    return jsonError(
+      'Max bids per auction cannot be lower than the per-bidder limit — one bidder would exhaust the auction.',
+      400
+    );
+  }
 
   const updated = await prisma.auction.update({ where: { id }, data });
 

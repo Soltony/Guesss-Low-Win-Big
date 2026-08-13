@@ -1,7 +1,11 @@
 import { notFound } from 'next/navigation';
 import { MiniAppShell } from '@/components/miniapp/mini-app-shell';
 import { AuctionDetail } from '@/components/miniapp/auction-detail';
-import { getAuctionByCode, getMyBidsForAuction } from '@/lib/miniapp-data';
+import {
+  getAuctionByCode,
+  getBidderAuctionContext,
+  getMyBidsForAuction,
+} from '@/lib/miniapp-data';
 import { getFavoriteAuctionIds, getShellUser } from '@/lib/miniapp-user';
 import { getSettings } from '@/lib/settings';
 import { isRevealAllowed } from '@/lib/auction-engine';
@@ -28,10 +32,11 @@ export default async function AuctionDetailPage({
 
   if (!auction) notFound();
 
-  const [myBids, favorites, revealAllowed] = await Promise.all([
+  const [myBids, favorites, revealAllowed, bidderContext] = await Promise.all([
     user ? getMyBidsForAuction(user.bidderId, auction.id) : Promise.resolve([]),
     getFavoriteAuctionIds(user?.bidderId),
     isRevealAllowed({ status: auction.status, endAt: new Date(auction.endAt) }),
+    user ? getBidderAuctionContext(user.bidderId, auction.id) : Promise.resolve(null),
   ]);
 
   return (
@@ -42,6 +47,8 @@ export default async function AuctionDetailPage({
         myBids={myBids}
         favorited={favorites.has(auction.id)}
         revealAllowed={revealAllowed}
+        carriedBids={bidderContext?.carriedBids ?? 0}
+        blockedReason={bidderContext?.eligible === false ? bidderContext.eligibilityReason : null}
       />
     </MiniAppShell>
   );

@@ -17,6 +17,7 @@ The rule the whole system serves: **the winner is the participant holding the lo
   - [Testing without the super app](#testing-without-the-super-app)
 - [How bidding and payment work](#how-bidding-and-payment-work)
 - [Settlement](#settlement)
+- [Re-auctions and carried-forward bids](#re-auctions-and-carried-forward-bids)
 - [The scheduled tick](#the-scheduled-tick)
 - [Admin console](#admin-console)
 - [Image uploads](#image-uploads)
@@ -219,16 +220,77 @@ gateway, so strict rejection defaults to **off**: mismatches are recorded as
 Bid amounts are `Decimal(18,2)`, not floats — float rounding would silently
 merge or split amounts and corrupt the uniqueness calculation.
 
-If no amount is unique, the auction settles with **no winner**, which is a
-legitimate outcome the UI states plainly.
+A round has **no valid winner** when no amount is unique, or when it closes
+with fewer confirmed bids than `reauctionMinBids` — a turnout floor that stops
+a three-bid auction handing over a phone. Either way the item is not awarded,
+and the auction is picked up by the re-auction rules below.
 
 Settlement is idempotent, and re-settling (`force`) discards the previous
 snapshot and recomputes — for use after a dispute. Both can be routed through
-maker-checker.
+maker-checker. Re-settling never forks a chain that has already produced a
+re-auction round.
 
 **Nothing about uniqueness is exposed before settlement.** `isUnique` is null
 while an auction runs, and `isRevealAllowed()` gates disclosure according to
 `reveal.policy` (`END_ONLY` by default, so bidders cannot probe the bid space).
+
+---
+
+## Re-auctions and carried-forward bids
+
+An auction that closes without a valid winner can be re-run instead of written
+off. Each re-run is a real `Auction` row — same item, same rules, code
+`195 → 195-R1 → 195-R2` — linked to its predecessor by `parentAuctionId` and to
+the root of the chain by `originalAuctionId`, so the whole lineage is one
+indexed query. The rules live in `src/lib/reauction.ts`; the pure decision
+functions sit in `src/lib/reauction-rules.ts` so the mini-app can render the
+same rule the server enforces.
+
+Per auction (set at creation, inherited by every round):
+
+| Field | Meaning |
+| --- | --- |
+| `reauctionEnabled` | Re-run instead of closing unsold |
+| `maxReauctionRounds` | How many re-runs before the chain gives up |
+| `reauctionDurationHours` | Length of each re-run |
+| `reauctionStartDelayMinutes` | Gap before it opens, so bidders are notified first |
+| `reauctionAllowNewBidders` | Whether bidders new to the chain may join |
+| `reauctionAllowPreviousBidders` | Whether earlier rounds' bidders may return |
+| `reauctionMinBids` | Turnout floor for a valid result |
+| `maxTotalBids` | Auction-wide bid cap, alongside `maxBidsPerUser` (0 = unlimited) |
+
+Platform defaults for all of these live under the **Re-Auction** settings
+category; `reauction.autoCreate` and `reauction.autoPublish` decide whether the
+next round opens by itself and whether it goes live or waits as a draft. With
+`autoCreate` off the auction is flagged `PENDING` and an operator opens it from
+the auction page.
+
+### Nobody pays twice
+
+**A bidder is never charged twice for the same bid.** When a round opens, every
+bid a bidder has already paid for anywhere in the chain becomes a `BidCredit`
+they can spend on the new round:
+
+> credits granted on round N+1 = bids paid for across rounds 1..N
+
+Paid 5 bids, then place 8 in the re-auction → 5 are free, 3 are charged. Those
+3 join the pool, so a third round grants 8. Across the whole chain a bidder only
+ever pays for the largest single round they played.
+
+Two details make that hold:
+
+- Carried bids are recorded with `feeAmount = 0` and `carriedOver = true`, so
+  counting fee-bearing bids counts each paid bid exactly once, however deep the
+  chain runs.
+- A credit is spent by a single conditional `UPDATE … WHERE remaining > 0`, so
+  two concurrent bids can never spend the same credit. A bid that later fails
+  or expires hands its credit back.
+
+Everyone from the previous round is notified when a round opens
+(`AUCTION_REAUCTIONED`, or `REAUCTION_EXCLUDED` when the round is closed to
+them): that the auction is being re-run, how many paid bids came with them, and
+from which bid a fee starts again. The auction page shows the full chain, and
+the carried bids per bidder with how many are still unspent.
 
 ---
 
@@ -241,9 +303,10 @@ curl -X POST -H "x-cron-secret: $CRON_SECRET" https://<host>/api/cron/tick
 ```
 
 Each tick advances `SCHEDULED → LIVE → ENDED`, voids unpaid bids past their
-timeout, auto-settles ended auctions past the grace period, notifies winners,
-and sends "ending soon" reminders. Every step is idempotent — a missed or
-duplicated tick is harmless.
+timeout, auto-settles ended auctions past the grace period, opens re-auction
+rounds for the ones with no valid winner, notifies winners and carried-forward
+bidders, and sends "ending soon" reminders. Every step is idempotent — a missed
+or duplicated tick is harmless.
 
 Lifecycle transitions also happen lazily on read, so the mini-app stays correct
 even if the cron job is down.
@@ -255,7 +318,7 @@ even if the cron job is down.
 | Module | What it does |
 | --- | --- |
 | **Dashboard** | Live KPIs, 14-day activity chart, and a "needs attention" queue |
-| **Auctions** | Full lifecycle: draft → publish → live → ended → settled/cancelled, plus a provisional-result preview and per-auction bid explorer |
+| **Auctions** | Full lifecycle: draft → publish → live → ended → settled/cancelled, plus a provisional-result preview, the re-auction chain with carried-forward bids, and a per-auction bid explorer |
 | **Bids** | Every bid across the platform, including unpaid attempts |
 | **Winners** | Claim → verify → deliver, forfeiture, and runner-up promotion |
 | **Payments** | Reconciliation: manual confirm, fail, and refund/reversal |
@@ -333,14 +396,17 @@ Everything tunable lives in **Settings**, backed by `src/lib/settings.ts`. The
 page renders itself from the definitions, so adding a setting is one object.
 
 Groups: **Platform**, **Bidding Rules**, **Bid Visibility**, **Winners & Claims**,
-**Payments**, **Notifications**, **Security & Governance**.
+**Re-Auction**, **Payments**, **Notifications**, **Security & Governance**.
 
 Highlights:
 
-- `bidding.*` — default fee, bid range, increment, per-bidder cap, duration,
-  auto-extend (anti-sniping), "ending soon" threshold
+- `bidding.*` — default fee, bid range, increment, per-bidder cap, auction-wide
+  cap, duration, auto-extend (anti-sniping), "ending soon" threshold
 - `reveal.policy` — `END_ONLY` (default), `LAST_WINDOW`, or `LIVE`
 - `winners.*` — auto-settle, grace period, claim window, runner-up depth
+- `reauction.*` — whether rounds open and publish automatically, and the
+  defaults for round limit, duration, start delay, who may take part, and the
+  turnout floor
 - `payments.*` — enable/disable fees, merchant details, timeout, refund flagging
 - `security.*` — login lockout, and maker-checker toggles for publishing,
   settings, and settlement
@@ -363,7 +429,9 @@ src/
 
   lib/
     auction-engine.ts    # ranking, settlement, lifecycle, reveal policy
-    bidding.ts           # bid validation, placement, confirmation
+    reauction-rules.ts   # pure re-auction rules (no DB — shared with the mini-app)
+    reauction.ts         # re-auction rounds, carried-forward bid credits, lineage
+    bidding.ts           # bid validation, caps, placement, confirmation
     payment-gateway.ts   # super-app payment: signing, initiation, verification
     miniapp-connect.ts   # super-app token → bidder session
     session.ts           # admin + bidder sessions

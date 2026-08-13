@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Ban, Loader2, Rocket, Star, Trophy } from 'lucide-react';
+import { Ban, Loader2, RefreshCw, Rocket, Star, Trophy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -24,6 +24,9 @@ interface Props {
     status: string;
     featured: boolean;
     bidCount: number;
+    reauctionState: string;
+    reauctionRound: number;
+    maxReauctionRounds: number;
   };
   canUpdate: boolean;
   canSettle: boolean;
@@ -35,6 +38,7 @@ export function AuctionActions({ auction, canUpdate, canSettle }: Props) {
   const [busy, setBusy] = useState<string | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [settleOpen, setSettleOpen] = useState(false);
+  const [reauctionOpen, setReauctionOpen] = useState(false);
   const [reason, setReason] = useState('');
 
   const run = async (action: string, body: Record<string, unknown> = {}) => {
@@ -56,15 +60,20 @@ export function AuctionActions({ auction, canUpdate, canSettle }: Props) {
         title: data.pending ? 'Sent for approval' : 'Done',
         description:
           data.message ||
-          (action === 'settle' || action === 'resettle'
-            ? data.result?.winnerBidId
-              ? `Winner determined at ${data.result.winningAmount?.toFixed(2)}.`
-              : 'Settled — no unique bid, so there is no winner.'
-            : undefined),
+          (action === 'reauction'
+            ? `Re-auction ${data.code} opened — ${data.bidsCarried} paid bid(s) carried forward for ${data.biddersCarried} bidder(s).`
+            : action === 'settle' || action === 'resettle'
+              ? data.result?.winnerBidId
+                ? `Winner determined at ${data.result.winningAmount?.toFixed(2)}.`
+                : data.result?.reauctionCode
+                  ? `No valid winner — re-auctioned as ${data.result.reauctionCode}.`
+                  : 'Settled — no unique bid, so there is no winner.'
+              : undefined),
       });
 
       setCancelOpen(false);
       setSettleOpen(false);
+      setReauctionOpen(false);
       setReason('');
       router.refresh();
     } catch {
@@ -80,6 +89,10 @@ export function AuctionActions({ auction, canUpdate, canSettle }: Props) {
     canUpdate && !['SETTLED', 'CANCELLED'].includes(auction.status);
   const canSettleNow = canSettle && auction.status === 'ENDED';
   const canResettle = canSettle && auction.status === 'SETTLED';
+  // Offered whenever a settled auction has no round behind it yet, including
+  // the states the automatic path declined — an operator can override those.
+  const canReauction =
+    canUpdate && auction.status === 'SETTLED' && auction.reauctionState !== 'CREATED';
 
   if (!canPublish && !canCancel && !canSettleNow && !canResettle && !canUpdate) return null;
 
@@ -120,6 +133,18 @@ export function AuctionActions({ auction, canUpdate, canSettle }: Props) {
           >
             <Trophy className="mr-2 h-4 w-4" />
             Re-settle auction
+          </Button>
+        )}
+
+        {canReauction && (
+          <Button
+            className="w-full"
+            variant="outline"
+            onClick={() => setReauctionOpen(true)}
+            disabled={busy !== null}
+          >
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Open re-auction round
           </Button>
         )}
 
@@ -177,6 +202,42 @@ export function AuctionActions({ auction, canUpdate, canSettle }: Props) {
             >
               {busy === 'cancel' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Cancel auction
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={reauctionOpen} onOpenChange={setReauctionOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Open a re-auction of #{auction.code}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              A new round is created with the same item and the same rules, as round{' '}
+              {auction.reauctionRound + 1} of at most {auction.maxReauctionRounds}. Every bid a
+              bidder already paid for in this chain carries into it free of charge — they are only
+              charged once they bid beyond what they have paid for. Everyone from the previous
+              round is notified.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <Textarea
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Reason (recorded in the audit log and on the auction)"
+            rows={3}
+          />
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>Not now</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy !== null}
+              onClick={(event) => {
+                event.preventDefault();
+                run('reauction', { reason });
+              }}
+            >
+              {busy === 'reauction' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Open re-auction
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

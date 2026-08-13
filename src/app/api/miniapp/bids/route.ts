@@ -59,6 +59,7 @@ export async function GET(req: NextRequest) {
       currency: bid.auction.currency,
       amount: toNum(bid.amount),
       feeAmount: toNum(bid.feeAmount),
+      carriedOver: bid.carriedOver,
       status: bid.status,
       sequence: bid.sequence,
       createdAt: bid.createdAt.toISOString(),

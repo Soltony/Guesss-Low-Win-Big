@@ -73,6 +73,7 @@ export default async function MyBidsPage() {
         id: string;
         amount: number;
         feeAmount: number;
+        carriedOver: boolean;
         status: string;
         sequence: number;
         createdAt: string;
@@ -107,6 +108,7 @@ export default async function MyBidsPage() {
       id: bid.id,
       amount: toNum(bid.amount),
       feeAmount: toNum(bid.feeAmount),
+      carriedOver: bid.carriedOver,
       status: bid.status,
       sequence: bid.sequence,
       createdAt: bid.createdAt.toISOString(),

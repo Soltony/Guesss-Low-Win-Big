@@ -21,6 +21,8 @@ interface Entry {
     id: string;
     amount: number;
     feeAmount: number;
+    /** Paid for in an earlier round of this auction, so no fee was charged again. */
+    carriedOver: boolean;
     status: string;
     sequence: number;
     createdAt: string;
@@ -149,6 +151,11 @@ export function MyBidsList({ entries, totalSpent }: { entries: Entry[]; totalSpe
                           <span className="ml-2 text-[11px] font-normal text-muted-foreground">
                             #{bid.sequence}
                           </span>
+                          {bid.carriedOver && (
+                            <span className="ml-2 text-[11px] font-semibold text-success">
+                              carried over
+                            </span>
+                          )}
                         </span>
 
                         <span className="flex items-center gap-3">

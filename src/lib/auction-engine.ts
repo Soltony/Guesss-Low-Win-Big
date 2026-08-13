@@ -2,7 +2,8 @@ import prisma from './prisma';
 import { getSetting, getSettings } from './settings';
 import { createAuditLog } from './audit-log';
 import { toNum } from './format';
-import type { AuctionStatus } from './types';
+import { createReauction, decideReauction, isWinnerValid, releaseBidCredit } from './reauction';
+import type { AuctionStatus, ReauctionState, SettlementActor } from './types';
 
 /**
  * Lowest Unique Bid Auction rules.
@@ -106,7 +107,7 @@ export async function expireStalePendingBids(): Promise<number> {
 
   const stale = await prisma.bid.findMany({
     where: { status: 'PENDING_PAYMENT', createdAt: { lt: cutoff } },
-    select: { id: true },
+    select: { id: true, bidderId: true, auctionId: true, carriedOver: true },
     take: 500,
   });
   if (stale.length === 0) return 0;
@@ -125,6 +126,12 @@ export async function expireStalePendingBids(): Promise<number> {
     data: { status: 'EXPIRED', failureReason: 'Bid expired before payment confirmation' },
   });
 
+  // Carried bids confirm instantly so they rarely land here, but a voided one
+  // must hand its prepaid bid back rather than burn it.
+  for (const bid of stale.filter((b) => b.carriedOver)) {
+    await releaseBidCredit(bid.bidderId, bid.auctionId);
+  }
+
   return ids.length;
 }
 
@@ -138,6 +145,12 @@ export interface SettlementOutcome {
   totalActiveBids: number;
   uniqueBids: number;
   rankings: RankedBid[];
+  /** What settlement decided about re-running this auction. */
+  reauctionState?: ReauctionState;
+  reauctionReason?: string;
+  /** Set when settlement opened the next round itself. */
+  reauctionAuctionId?: string;
+  reauctionCode?: string;
 }
 
 /**
@@ -148,8 +161,8 @@ export interface SettlementOutcome {
  */
 export async function settleAuction(
   auctionId: string,
-  actor: { id: string; name?: string } = { id: 'SYSTEM', name: 'System' },
-  options: { force?: boolean } = {}
+  actor: SettlementActor = { id: 'SYSTEM', name: 'System' },
+  options: { force?: boolean; skipReauction?: boolean } = {}
 ): Promise<SettlementOutcome> {
   const settings = await getSettings();
   const runnerUpDepth = Number(settings['winners.runnerUpDepth']) || 0;
@@ -204,7 +217,23 @@ export async function settleAuction(
     }))
   );
 
-  const winner = rankings[0];
+  // A ranked bid is only awarded when the round itself was a valid contest —
+  // an auction may require a minimum turnout before it hands the item over.
+  const validity = isWinnerValid(auction, {
+    hasUniqueBid: rankings.length > 0,
+    activeBidCount: activeBids.length,
+  });
+  const winner = validity.valid ? rankings[0] : undefined;
+
+  const decision = decideReauction(
+    auction,
+    { hasUniqueBid: rankings.length > 0, activeBidCount: activeBids.length },
+    { autoCreate: Boolean(settings['reauction.autoCreate']) }
+  );
+  // A chain never forks: once a round has spawned its successor, re-settling
+  // the parent reports the result but leaves the lineage alone.
+  const lineageSettled = auction.reauctionState === 'CREATED';
+
   const keep = runnerUpDepth > 0 ? rankings.slice(0, runnerUpDepth + 1) : rankings.slice(0, 1);
   const uniqueBidIds = new Set(rankings.map((r) => r.bidId));
 
@@ -287,6 +316,9 @@ export async function settleAuction(
         settledAt: new Date(),
         settledById: actor.id === 'SYSTEM' ? null : actor.id,
         winnerBidId: winner?.bidId ?? null,
+        ...(lineageSettled
+          ? {}
+          : { reauctionState: decision.state, reauctionReason: decision.reason }),
       },
     });
   });
@@ -304,8 +336,32 @@ export async function settleAuction(
       winnerBidId: winner?.bidId ?? null,
       winningAmount: winner?.amount ?? null,
       topRanks: keep.slice(0, 5),
+      reauctionState: lineageSettled ? 'CREATED' : decision.state,
+      reauctionReason: lineageSettled ? undefined : decision.reason,
     },
   });
+
+  // Opening the next round is deliberately outside the settlement transaction:
+  // the result is final either way, and a failure here leaves the auction
+  // flagged PENDING for an operator rather than unsettled.
+  let reauctionState: ReauctionState = lineageSettled ? 'CREATED' : decision.state;
+  let reauctionAuctionId: string | undefined;
+  let reauctionCode: string | undefined;
+
+  if (!lineageSettled && decision.shouldCreate && !options.skipReauction) {
+    try {
+      const created = await createReauction(auctionId, actor, { reason: decision.reason });
+      if (created.created) {
+        reauctionState = 'CREATED';
+        reauctionAuctionId = created.auctionId;
+        reauctionCode = created.code;
+      } else {
+        console.error('[auction-engine] re-auction not created', auctionId, created.reason);
+      }
+    } catch (error) {
+      console.error('[auction-engine] re-auction failed', auctionId, error);
+    }
+  }
 
   return {
     auctionId,
@@ -316,7 +372,11 @@ export async function settleAuction(
     totalActiveBids: activeBids.length,
     uniqueBids: rankings.length,
     rankings: keep,
-    reason: winner ? undefined : 'No unique bid was placed — the auction has no winner.',
+    reason: validity.valid ? undefined : validity.reason,
+    reauctionState,
+    reauctionReason: lineageSettled ? undefined : decision.reason,
+    reauctionAuctionId,
+    reauctionCode,
   };
 }
 
@@ -348,8 +408,15 @@ export async function autoSettleDueAuctions(): Promise<SettlementOutcome[]> {
 /** Promotes the next-ranked unique bid after a winner forfeits. */
 export async function promoteRunnerUp(
   auctionId: string,
-  actor: { id: string; name?: string }
-): Promise<{ promoted: boolean; reason?: string; bidderId?: string; amount?: number }> {
+  actor: SettlementActor
+): Promise<{
+  promoted: boolean;
+  reason?: string;
+  bidderId?: string;
+  amount?: number;
+  reauctionState?: ReauctionState;
+  reauctionCode?: string;
+}> {
   const claimWindowHours = Number(await getSetting<number>('winners.claimWindowHours')) || 72;
 
   const current = await prisma.winner.findUnique({ where: { auctionId } });
@@ -366,7 +433,20 @@ export async function promoteRunnerUp(
   const next = await prisma.auctionResult.findUnique({
     where: { auctionId_rank: { auctionId, rank: nextRank } },
   });
-  if (!next) return { promoted: false, reason: 'No runner-up is available for this auction.' };
+  if (!next) {
+    // A forfeited winner with nobody behind them leaves the item unawarded,
+    // which is the same "no valid winner" the re-auction rules exist for.
+    const fallback = await flagForReauction(
+      auctionId,
+      'The winner forfeited and no runner-up is available.',
+      actor
+    );
+    return {
+      promoted: false,
+      reason: 'No runner-up is available for this auction.',
+      ...fallback,
+    };
+  }
 
   await prisma.$transaction(async (tx) => {
     await tx.winner.delete({ where: { auctionId } });
@@ -397,6 +477,45 @@ export async function promoteRunnerUp(
   });
 
   return { promoted: true, bidderId: next.bidderId, amount: toNum(next.amount) };
+}
+
+/**
+ * Marks an already-settled auction as needing a re-run, and opens the round
+ * when automatic creation is on. Used by paths that discover "no valid winner"
+ * after settlement — a forfeit with no runner-up left, for instance.
+ */
+export async function flagForReauction(
+  auctionId: string,
+  reason: string,
+  actor: SettlementActor
+): Promise<{ reauctionState?: ReauctionState; reauctionCode?: string }> {
+  const auction = await prisma.auction.findUnique({ where: { id: auctionId } });
+  if (!auction) return {};
+  if (auction.reauctionState === 'CREATED') return { reauctionState: 'CREATED' };
+
+  const settings = await getSettings();
+  const decision = decideReauction(
+    auction,
+    // The round is being re-opened because the award failed, not because the
+    // bids were thin, so only the round-limit and eligibility rules apply.
+    { hasUniqueBid: false, activeBidCount: auction.bidCount },
+    { autoCreate: Boolean(settings['reauction.autoCreate']) }
+  );
+
+  await prisma.auction.update({
+    where: { id: auctionId },
+    data: { reauctionState: decision.state, reauctionReason: reason },
+  });
+
+  if (!decision.shouldCreate) return { reauctionState: decision.state };
+
+  try {
+    const created = await createReauction(auctionId, actor, { reason });
+    if (created.created) return { reauctionState: 'CREATED', reauctionCode: created.code };
+  } catch (error) {
+    console.error('[auction-engine] re-auction after forfeit failed', auctionId, error);
+  }
+  return { reauctionState: decision.state };
 }
 
 /** Recomputes the denormalized bid counters on an auction. */

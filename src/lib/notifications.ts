@@ -13,6 +13,8 @@ export const TEMPLATE_CODES = {
   BID_FAILED: 'BID_FAILED',
   AUCTION_ENDING: 'AUCTION_ENDING',
   AUCTION_SETTLED: 'AUCTION_SETTLED',
+  AUCTION_REAUCTIONED: 'AUCTION_REAUCTIONED',
+  REAUCTION_EXCLUDED: 'REAUCTION_EXCLUDED',
   WINNER_ANNOUNCED: 'WINNER_ANNOUNCED',
   WINNER_REMINDER: 'WINNER_REMINDER',
   PRIZE_FULFILLED: 'PRIZE_FULFILLED',
@@ -165,6 +167,24 @@ export const DEFAULT_TEMPLATES: {
       'GuessLow: auction {code} ({title}) has closed. The winning bid was {amount} {currency}. Check the app for your results.',
     bodyAm:
       'GuessLow: ጨረታ {code} ({title}) ተዘግቷል። አሸናፊው ጨረታ {amount} {currency} ነበር። ውጤትዎን በመተግበሪያው ይመልከቱ።',
+  },
+  {
+    code: 'AUCTION_REAUCTIONED',
+    name: 'Auction re-auctioned',
+    channel: 'SMS',
+    bodyEn:
+      'GuessLow: auction {code} ({title}) closed with no winner and is being re-run as {newCode}, open until {deadline}. Your {carriedBids} paid bids carry over — you are only charged {fee} {currency} for bids beyond those.',
+    bodyAm:
+      'GuessLow: ጨረታ {code} ({title}) ያለ አሸናፊ ተዘግቷል፤ በ{newCode} እንደገና ይካሄዳል፣ እስከ {deadline} ክፍት ነው። የከፈሉት {carriedBids} ጨረታዎች ተላልፈዋል — ከዚያ በላይ ለሚያቀርቡት ብቻ {fee} {currency} ይከፍላሉ።',
+  },
+  {
+    code: 'REAUCTION_EXCLUDED',
+    name: 'Re-auction closed to previous bidders',
+    channel: 'SMS',
+    bodyEn:
+      'GuessLow: auction {code} ({title}) closed with no winner and is being re-run as {newCode}. This round is open to new bidders only, so no further fee will be charged to you.',
+    bodyAm:
+      'GuessLow: ጨረታ {code} ({title}) ያለ አሸናፊ ተዘግቷል፤ በ{newCode} እንደገና ይካሄዳል። ይህ ዙር ለአዲስ ተጫራቾች ብቻ ክፍት ነው፣ ስለዚህ ተጨማሪ ክፍያ አይቀነስብዎትም።',
   },
   {
     code: 'WINNER_ANNOUNCED',

@@ -31,9 +31,17 @@ export interface AuctionDefaults {
   maxBidAmount: number;
   bidStep: number;
   maxBidsPerUser: number;
+  maxTotalBids: number;
   durationDays: number;
   autoExtendMinutes: number;
   currency: string;
+  reauctionEnabled: boolean;
+  maxReauctionRounds: number;
+  reauctionDurationHours: number;
+  reauctionStartDelayMinutes: number;
+  reauctionAllowNewBidders: boolean;
+  reauctionAllowPreviousBidders: boolean;
+  reauctionMinBids: number;
 }
 
 export interface AuctionFormValues {
@@ -47,12 +55,20 @@ export interface AuctionFormValues {
   maxBidAmount: number;
   bidStep: number;
   maxBidsPerUser: number;
+  maxTotalBids: number;
   autoExtendMinutes: number;
   startAt: string;
   endAt: string;
   featured: boolean;
   displayOrder: number;
   termsId: string;
+  reauctionEnabled: boolean;
+  maxReauctionRounds: number;
+  reauctionDurationHours: number;
+  reauctionStartDelayMinutes: number;
+  reauctionAllowNewBidders: boolean;
+  reauctionAllowPreviousBidders: boolean;
+  reauctionMinBids: number;
 }
 
 function toLocalInput(date: Date) {
@@ -91,6 +107,7 @@ export function AuctionForm({
     maxBidAmount: initial?.maxBidAmount ?? defaults.maxBidAmount,
     bidStep: initial?.bidStep ?? defaults.bidStep,
     maxBidsPerUser: initial?.maxBidsPerUser ?? defaults.maxBidsPerUser,
+    maxTotalBids: initial?.maxTotalBids ?? defaults.maxTotalBids,
     autoExtendMinutes: initial?.autoExtendMinutes ?? defaults.autoExtendMinutes,
     startAt: initial?.startAt ?? toLocalInput(now),
     endAt:
@@ -99,6 +116,17 @@ export function AuctionForm({
     featured: initial?.featured ?? false,
     displayOrder: initial?.displayOrder ?? 0,
     termsId: initial?.termsId ?? terms.find((t) => t.active)?.id ?? '',
+    reauctionEnabled: initial?.reauctionEnabled ?? defaults.reauctionEnabled,
+    maxReauctionRounds: initial?.maxReauctionRounds ?? defaults.maxReauctionRounds,
+    reauctionDurationHours:
+      initial?.reauctionDurationHours ?? defaults.reauctionDurationHours,
+    reauctionStartDelayMinutes:
+      initial?.reauctionStartDelayMinutes ?? defaults.reauctionStartDelayMinutes,
+    reauctionAllowNewBidders:
+      initial?.reauctionAllowNewBidders ?? defaults.reauctionAllowNewBidders,
+    reauctionAllowPreviousBidders:
+      initial?.reauctionAllowPreviousBidders ?? defaults.reauctionAllowPreviousBidders,
+    reauctionMinBids: initial?.reauctionMinBids ?? defaults.reauctionMinBids,
   });
 
   const selectedItem = items.find((item) => item.id === form.itemId);
@@ -271,6 +299,27 @@ export function AuctionForm({
             </div>
 
             <div className="space-y-1.5">
+              <Label htmlFor="maxTotalBids">Max bids for the auction</Label>
+              <Input
+                id="maxTotalBids"
+                type="number"
+                min="0"
+                disabled={economicsLocked}
+                value={form.maxTotalBids}
+                onChange={(event) => setField('maxTotalBids', Number(event.target.value))}
+              />
+              <p className="text-xs text-muted-foreground">
+                Bidding closes once this many bids have been placed by everyone combined. 0 means
+                unlimited.
+              </p>
+              {form.maxTotalBids > 0 && form.maxTotalBids < form.maxBidsPerUser && (
+                <p className="text-xs text-destructive">
+                  Lower than the per-bidder limit — a single bidder could exhaust the auction.
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
               <Label htmlFor="minBidAmount">Minimum bid amount</Label>
               <Input
                 id="minBidAmount"
@@ -324,6 +373,141 @@ export function AuctionForm({
               />
               <p className="text-xs text-muted-foreground">0 disables anti-sniping extension.</p>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Re-auction</CardTitle>
+            <CardDescription>
+              What happens when this auction closes without a valid winner. Every round inherits
+              these rules, and bids a bidder already paid for carry into the next round free of
+              charge.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <Label htmlFor="reauctionEnabled">Re-auction when there is no winner</Label>
+                <p className="text-xs text-muted-foreground">
+                  Opens a fresh round automatically instead of closing the item unsold.
+                </p>
+              </div>
+              <Switch
+                id="reauctionEnabled"
+                checked={form.reauctionEnabled}
+                onCheckedChange={(checked) => setField('reauctionEnabled', checked)}
+              />
+            </div>
+
+            {form.reauctionEnabled && (
+              <>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="maxReauctionRounds">Max re-auction rounds</Label>
+                    <Input
+                      id="maxReauctionRounds"
+                      type="number"
+                      min="1"
+                      value={form.maxReauctionRounds}
+                      onChange={(event) =>
+                        setField('maxReauctionRounds', Number(event.target.value))
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      After this many re-runs the auction closes with no winner.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="reauctionDurationHours">Re-auction duration (hours)</Label>
+                    <Input
+                      id="reauctionDurationHours"
+                      type="number"
+                      min="1"
+                      value={form.reauctionDurationHours}
+                      onChange={(event) =>
+                        setField('reauctionDurationHours', Number(event.target.value))
+                      }
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="reauctionStartDelayMinutes">Start delay (minutes)</Label>
+                    <Input
+                      id="reauctionStartDelayMinutes"
+                      type="number"
+                      min="0"
+                      value={form.reauctionStartDelayMinutes}
+                      onChange={(event) =>
+                        setField('reauctionStartDelayMinutes', Number(event.target.value))
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Gap before the new round opens, so bidders get the notice first.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="reauctionMinBids">Minimum bids for a valid result</Label>
+                    <Input
+                      id="reauctionMinBids"
+                      type="number"
+                      min="0"
+                      value={form.reauctionMinBids}
+                      onChange={(event) => setField('reauctionMinBids', Number(event.target.value))}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      A round closing with fewer confirmed bids is re-auctioned instead of awarded.
+                      0 disables the floor.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start justify-between gap-4 border-t border-border pt-4">
+                  <div>
+                    <Label htmlFor="reauctionAllowNewBidders">New bidders may take part</Label>
+                    <p className="text-xs text-muted-foreground">
+                      When off, only bidders from an earlier round may bid in the re-run.
+                    </p>
+                  </div>
+                  <Switch
+                    id="reauctionAllowNewBidders"
+                    checked={form.reauctionAllowNewBidders}
+                    onCheckedChange={(checked) => setField('reauctionAllowNewBidders', checked)}
+                  />
+                </div>
+
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <Label htmlFor="reauctionAllowPreviousBidders">
+                      Previous bidders may take part
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      When off, everyone from the earlier rounds is excluded and nothing is carried
+                      forward.
+                    </p>
+                  </div>
+                  <Switch
+                    id="reauctionAllowPreviousBidders"
+                    checked={form.reauctionAllowPreviousBidders}
+                    onCheckedChange={(checked) =>
+                      setField('reauctionAllowPreviousBidders', checked)
+                    }
+                  />
+                </div>
+
+                {!form.reauctionAllowNewBidders && !form.reauctionAllowPreviousBidders && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription className="text-xs">
+                      With both switches off nobody could bid in the re-auction. Allow at least one
+                      group.
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </>
+            )}
           </CardContent>
         </Card>
 

@@ -4,6 +4,7 @@ import { isGuardFailure, jsonError, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
 import { requestChange, requiresApproval } from '@/lib/approvals';
 import { settleAuction } from '@/lib/auction-engine';
+import { createReauction } from '@/lib/reauction';
 import { notify } from '@/lib/notifications';
 import { getSettings } from '@/lib/settings';
 import { toNum } from '@/lib/format';
@@ -158,6 +159,44 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
       await notifyWinner(id);
       return NextResponse.json({ ok: true, result });
+    }
+
+    case 'reauction': {
+      const guard = await requirePermission('auctions', 'update');
+      if (isGuardFailure(guard)) return guard.response;
+      const { user } = guard;
+
+      if (auction.status !== 'SETTLED') {
+        return jsonError('Only a settled auction can be re-auctioned.', 409);
+      }
+      if (auction.reauctionState === 'CREATED') {
+        return jsonError('This auction has already been re-auctioned.', 409);
+      }
+
+      const result = await createReauction(
+        id,
+        { id: user.id, name: user.fullName },
+        {
+          reason:
+            String(body?.reason || '').trim() ||
+            auction.reauctionReason ||
+            'Re-auctioned by an operator.',
+          // An operator asking for this has already made the judgement call the
+          // automatic path makes from the config; only the "nobody can bid"
+          // guard still applies, because that round could not function.
+          force: true,
+        }
+      );
+      if (!result.created) return jsonError(result.reason || 'Re-auction failed.', 409);
+
+      return NextResponse.json({
+        ok: true,
+        auctionId: result.auctionId,
+        code: result.code,
+        round: result.round,
+        biddersCarried: result.biddersCarried,
+        bidsCarried: result.bidsCarried,
+      });
     }
 
     case 'feature': {

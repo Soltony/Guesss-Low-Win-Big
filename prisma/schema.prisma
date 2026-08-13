@@ -124,6 +124,7 @@ model Bidder {
   wins      Winner[]
   favorites BidderFavorite[]
   results   AuctionResult[]
+  credits   BidCredit[]
 
   @@index([status])
   @@index([moderatedById])
@@ -209,7 +210,8 @@ model Auction {
   minBidAmount   Decimal @db.Decimal(18, 2)
   maxBidAmount   Decimal @db.Decimal(18, 2)
   bidStep        Decimal @default(0.01) @db.Decimal(18, 2)
-  maxBidsPerUser Int     @default(100)
+  maxBidsPerUser Int     @default(100) // cap per bidder
+  maxTotalBids   Int     @default(0) // cap across the whole auction; 0 = unlimited
   currency       String  @default("ETB")
 
   startAt           DateTime
@@ -234,6 +236,31 @@ model Auction {
   settledBy       User?     @relation("AuctionSettledBy", fields: [settledById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   cancelledReason String?
 
+  // ---- Re-auction rules ----
+  // An auction that ends without a valid winner can be re-run automatically.
+  // Every round inherits this block, so the rules stay fixed for the whole chain.
+  reauctionEnabled              Boolean @default(false)
+  maxReauctionRounds            Int     @default(1) // how many re-runs the original may spawn
+  reauctionDurationHours        Int     @default(24)
+  reauctionStartDelayMinutes    Int     @default(0)
+  reauctionAllowNewBidders      Boolean @default(true)
+  reauctionAllowPreviousBidders Boolean @default(true)
+  // Below this many confirmed bids the round is not viable and is re-auctioned
+  // even if one amount happened to be unique. 0 disables the floor.
+  reauctionMinBids              Int     @default(0)
+
+  // ---- Re-auction lineage ----
+  // `originalAuctionId` points at the root of the chain on every re-run, so the
+  // whole lineage is one indexed query; the root itself leaves it null.
+  reauctionRound    Int       @default(0) // 0 = original auction
+  parentAuctionId   String?
+  parentAuction     Auction?  @relation("AuctionReauction", fields: [parentAuctionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  reauctions        Auction[] @relation("AuctionReauction")
+  originalAuctionId String?
+  reauctionState    String    @default("NONE") // NONE | NOT_NEEDED | PENDING | CREATED | EXHAUSTED | DISABLED | BLOCKED
+  reauctionReason   String?
+  reauctionedAt     DateTime?
+
   createdById String?
   createdBy   User?     @relation("AuctionCreatedBy", fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   publishedAt DateTime?
@@ -245,6 +272,7 @@ model Auction {
   winner    Winner?
   payments  PaymentTransaction[]
   favorites BidderFavorite[]
+  credits   BidCredit[]
 
   @@index([status, endAt])
   @@index([categoryId])
@@ -254,6 +282,8 @@ model Auction {
   @@index([createdById])
   @@index([settledById])
   @@index([termsId])
+  @@index([parentAuctionId])
+  @@index([originalAuctionId])
 }
 
 model Bid {
@@ -271,6 +301,10 @@ model Bid {
   status   String @default("PENDING_PAYMENT") // PENDING_PAYMENT | ACTIVE | FAILED | VOID | REFUNDED
   channel  String @default("MINIAPP") // MINIAPP | USSD | ADMIN
   sequence Int    @default(1) // nth bid by this bidder on this auction
+
+  // Funded by a bid the bidder already paid for in an earlier round of this
+  // auction's chain, so `feeAmount` is 0 and no new charge was raised.
+  carriedOver Boolean @default(false)
 
   // Filled in at settlement; null while the auction is running so nothing
   // about uniqueness can leak to bidders mid-auction.
@@ -292,6 +326,39 @@ model Bid {
   @@index([auctionId, status])
   @@index([bidderId, auctionId])
   @@index([createdAt])
+}
+
+// Bids a bidder already paid for in an earlier round, spendable on one
+// re-auction. Granted when the re-auction is created and drawn down as the
+// bidder places bids, which is what keeps anyone from paying twice for the
+// same bid across a chain of re-auctions.
+//
+// `remaining` is decremented by a conditional UPDATE (`remaining > 0`) so two
+// concurrent bids can never spend the same credit; `granted` stays untouched
+// as the audit record of what was carried forward.
+model BidCredit {
+  id       String @id @default(cuid())
+  bidderId String
+  bidder   Bidder @relation(fields: [bidderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  auctionId String // the re-auction these prepaid bids may be spent on
+  auction   Auction @relation(fields: [auctionId], references: [id], onDelete: Cascade)
+
+  sourceAuctionId String // round the credits were carried from
+  rootAuctionId   String // original auction of the chain
+
+  granted   Int
+  consumed  Int     @default(0)
+  remaining Int
+  unitFee   Decimal @db.Decimal(18, 2) // fee value of one carried bid, for reporting
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([bidderId, auctionId])
+  @@index([auctionId])
+  @@index([bidderId])
+  @@index([rootAuctionId])
 }
 
 // Ranked snapshot of the unique bids, written once at settlement.

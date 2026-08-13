@@ -10,11 +10,13 @@ import {
   Loader2,
   Lock,
   Package,
+  RefreshCw,
   Trophy,
   XCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { compactNumber } from '@/lib/format';
+import { splitCarriedBids } from '@/lib/reauction-rules';
 import { Countdown } from './countdown';
 import { BidPanel } from './bid-panel';
 import { FavoriteButton } from './favorite-button';
@@ -25,6 +27,8 @@ interface MyBid {
   id: string;
   amount: number;
   feeAmount: number;
+  /** Paid for in an earlier round of this auction, so no fee was charged again. */
+  carriedOver?: boolean;
   status: string;
   sequence: number;
   createdAt: string;
@@ -55,17 +59,29 @@ export function AuctionDetail({
   myBids,
   favorited,
   revealAllowed,
+  carriedBids = 0,
+  blockedReason = null,
 }: {
   auction: DetailAuction;
   connected: boolean;
   myBids: MyBid[];
   favorited: boolean;
   revealAllowed: boolean;
+  /** Bids paid for in an earlier round that carry into this one. */
+  carriedBids?: number;
+  /** Set when the re-auction rules exclude this bidder from the round. */
+  blockedReason?: string | null;
 }) {
   const { t, lang } = useLanguage();
   const [activeImage, setActiveImage] = useState(0);
   const currency = auction.currency === 'ETB' ? 'Br' : auction.currency;
   const isLive = auction.status === 'LIVE';
+  // How the bidder's remaining allowance in this round divides into bids they
+  // have already paid for and bids that will be charged.
+  const allowance = splitCarriedBids(
+    Math.max(0, auction.maxBidsPerUser - myBids.length),
+    carriedBids
+  );
   const images = auction.images;
   const endsWithin24h = new Date(auction.endAt).getTime() - Date.now() < 86_400_000;
 
@@ -217,6 +233,32 @@ export function AuctionDetail({
         </dl>
       </section>
 
+      {/* ---------- Re-auction notice ---------- */}
+      {auction.reauctionRound > 0 && (
+        <section className="px-4 pt-4">
+          <div className="gl-panel space-y-1.5 border-l-4 border-l-primary px-4 py-3">
+            <p className="flex items-center gap-1.5 text-sm font-bold">
+              <RefreshCw className="h-4 w-4 text-primary" />
+              Re-auction · round {auction.reauctionRound}
+            </p>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {auction.parentCode
+                ? `Auction #${auction.parentCode} closed without a winner, so it is running again here. `
+                : 'This auction closed without a winner and is running again. '}
+              {blockedReason
+                ? blockedReason
+                : carriedBids > 0
+                  ? `${carriedBids} bid${carriedBids === 1 ? '' : 's'} you already paid for carried over. Your next ${
+                      allowance.free
+                    } bid${allowance.free === 1 ? '' : 's'} here cost nothing; after that it is ${auction.bidFee.toFixed(
+                      2
+                    )} ${currency} each.`
+                  : 'Bids you already paid for in an earlier round carry over, so you are never charged twice for the same bid.'}
+            </p>
+          </div>
+        </section>
+      )}
+
       {/* ---------- Result or bidding ---------- */}
       <section className="px-4 pt-4">
         {auction.settled ? (
@@ -257,7 +299,13 @@ export function AuctionDetail({
             Connect to bid
           </Link>
         ) : (
-          <BidPanel auction={auction} connected={connected} bidsUsed={myBids.length} />
+          <BidPanel
+            auction={auction}
+            connected={connected}
+            bidsUsed={myBids.length}
+            carriedBids={carriedBids}
+            blockedReason={blockedReason}
+          />
         )}
       </section>
 
@@ -294,6 +342,9 @@ export function AuctionDetail({
                   </p>
                   <p className="mt-0.5 text-[11px] text-muted-foreground">
                     #{bid.sequence} · {new Date(bid.createdAt).toLocaleString('en-GB')}
+                    {bid.carriedOver && (
+                      <span className="ml-1 font-semibold text-success">· carried over</span>
+                    )}
                   </p>
                 </div>
 

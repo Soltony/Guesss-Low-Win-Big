@@ -5,6 +5,7 @@ import { AuctionForm } from '@/components/admin/auction-form';
 import { getCurrentUser } from '@/lib/session';
 import { hasPermission } from '@/lib/permissions';
 import { getSettings } from '@/lib/settings';
+import { reauctionDefaults } from '@/lib/reauction';
 import { toNum } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -54,9 +55,11 @@ export default async function NewAuctionPage() {
           maxBidAmount: Number(settings['bidding.defaultMaxBid']),
           bidStep: Number(settings['bidding.defaultBidStep']),
           maxBidsPerUser: Number(settings['bidding.defaultMaxBidsPerUser']),
+          maxTotalBids: Number(settings['bidding.defaultMaxTotalBids']),
           durationDays: Number(settings['bidding.defaultDurationDays']),
           autoExtendMinutes: Number(settings['bidding.defaultAutoExtendMinutes']),
           currency: String(settings['platform.currency'] || 'ETB'),
+          ...reauctionDefaults(settings),
         }}
       />
     </>

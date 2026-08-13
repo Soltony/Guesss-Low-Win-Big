@@ -97,6 +97,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         id: user.id,
         name: user.fullName,
       });
+
+      // Running out of runner-ups is not a failure when the re-auction rules
+      // pick the auction up instead — the operator needs to hear that, not a
+      // 409 that hides the round that was just opened.
+      if (!result.promoted && result.reauctionState === 'CREATED') {
+        return NextResponse.json({
+          ok: true,
+          promoted: false,
+          reauctionCode: result.reauctionCode,
+          message: `No runner-up was available, so the auction was re-auctioned as ${result.reauctionCode}.`,
+        });
+      }
+      if (!result.promoted && result.reauctionState === 'PENDING') {
+        return NextResponse.json({
+          ok: true,
+          promoted: false,
+          message: 'No runner-up was available. The auction is flagged for re-auction.',
+        });
+      }
       if (!result.promoted) return jsonError(result.reason || 'Could not promote a runner-up.', 409);
 
       const promoted = await prisma.winner.findUnique({

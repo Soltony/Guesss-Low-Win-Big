@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { isGuardFailure, jsonError, parsePaging, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
 import { getSettings } from '@/lib/settings';
+import { parseReauctionConfig, reauctionDefaults } from '@/lib/reauction';
 import { round2, toNum } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -48,6 +49,10 @@ export async function GET(req: NextRequest) {
       bidFee: toNum(a.bidFee),
       bidCount: a.bidCount,
       bidderCount: a.bidderCount,
+      maxTotalBids: a.maxTotalBids,
+      reauctionRound: a.reauctionRound,
+      reauctionState: a.reauctionState,
+      parentAuctionId: a.parentAuctionId,
       startAt: a.startAt.toISOString(),
       endAt: a.endAt.toISOString(),
     })),
@@ -56,7 +61,10 @@ export async function GET(req: NextRequest) {
 
 /** Generates the next public auction code, e.g. 185 → 186. */
 async function nextAuctionCode(): Promise<string> {
+  // Re-auction rounds carry a derived code like `185-R2`, which is not a number
+  // to count from; only original auctions drive the sequence.
   const latest = await prisma.auction.findFirst({
+    where: { reauctionRound: 0 },
     orderBy: { createdAt: 'desc' },
     select: { code: true },
   });
@@ -109,6 +117,9 @@ export async function POST(req: NextRequest) {
   const maxBidsPerUser = Math.trunc(
     Number(body.maxBidsPerUser ?? settings['bidding.defaultMaxBidsPerUser'])
   );
+  const maxTotalBids = Math.trunc(
+    Number(body.maxTotalBids ?? settings['bidding.defaultMaxTotalBids'])
+  );
 
   if (!(bidFee >= 0)) return jsonError('Bid fee must be zero or more.', 400);
   if (!(minBidAmount > 0)) return jsonError('Minimum bid must be greater than zero.', 400);
@@ -117,6 +128,18 @@ export async function POST(req: NextRequest) {
   }
   if (!(bidStep > 0)) return jsonError('Bid increment must be greater than zero.', 400);
   if (!(maxBidsPerUser >= 1)) return jsonError('Max bids per bidder must be at least 1.', 400);
+  if (!(maxTotalBids >= 0)) {
+    return jsonError('Max bids per auction must be zero (unlimited) or more.', 400);
+  }
+  if (maxTotalBids > 0 && maxTotalBids < maxBidsPerUser) {
+    return jsonError(
+      'Max bids per auction cannot be lower than the per-bidder limit — one bidder would exhaust the auction.',
+      400
+    );
+  }
+
+  const reauction = parseReauctionConfig(body, reauctionDefaults(settings));
+  if ('error' in reauction) return jsonError(reauction.error, 400);
 
   const code = body.code ? String(body.code).trim() : await nextAuctionCode();
   const existing = await prisma.auction.findUnique({ where: { code } });
@@ -135,6 +158,8 @@ export async function POST(req: NextRequest) {
       maxBidAmount,
       bidStep,
       maxBidsPerUser,
+      maxTotalBids,
+      ...reauction.config,
       currency: String(settings['platform.currency'] || 'ETB'),
       startAt,
       endAt,
@@ -158,7 +183,16 @@ export async function POST(req: NextRequest) {
     action: 'AUCTION_CREATED',
     entity: 'Auction',
     entityId: auction.id,
-    details: { code, title, bidFee, minBidAmount, maxBidAmount, maxBidsPerUser },
+    details: {
+      code,
+      title,
+      bidFee,
+      minBidAmount,
+      maxBidAmount,
+      maxBidsPerUser,
+      maxTotalBids,
+      ...reauction.config,
+    },
   });
 
   return NextResponse.json({ id: auction.id, code: auction.code }, { status: 201 });

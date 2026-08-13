@@ -3,6 +3,12 @@ import { getSettings } from './settings';
 import { createAuditLog } from './audit-log';
 import { round2, toNum } from './format';
 import { derivedStatus } from './auction-engine';
+import {
+  carriedBidsRemaining as remainingCredits,
+  claimBidCredit,
+  reauctionEligibility,
+  releaseBidCredit,
+} from './reauction';
 import { PaymentError, initiateBidFeePayment } from './payment-gateway';
 
 export class BidRejected extends Error {
@@ -34,6 +40,10 @@ export interface PlaceBidResult {
   sequence: number;
   transactionId?: string;
   remainingBids: number;
+  /** Paid for in an earlier round of this auction's chain, so no fee was raised. */
+  carriedOver: boolean;
+  /** Prepaid bids left after this one. */
+  carriedBidsRemaining: number;
 }
 
 /**
@@ -110,6 +120,34 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
     );
   }
 
+  // ---- Re-auction participation ----
+  // Who a re-run is open to is fixed when the round is created; a bidder the
+  // rules exclude must be turned away before any money is discussed.
+  const participation = await reauctionEligibility(auction, bidder.id);
+  if (!participation.eligible) {
+    throw new BidRejected(
+      participation.reason ?? 'You cannot bid in this re-auction.',
+      'REAUCTION_NOT_ELIGIBLE',
+      403
+    );
+  }
+
+  // ---- Auction-wide bid cap ----
+  // Counts bids still awaiting payment too, so a burst of pending bids cannot
+  // oversubscribe the cap and then all confirm.
+  if (auction.maxTotalBids > 0) {
+    const placed = await prisma.bid.count({
+      where: { auctionId: auction.id, status: { in: ['ACTIVE', 'PENDING_PAYMENT'] } },
+    });
+    if (placed >= auction.maxTotalBids) {
+      throw new BidRejected(
+        `This auction has reached its limit of ${auction.maxTotalBids} bids and is no longer accepting new ones.`,
+        'AUCTION_LIMIT_REACHED',
+        409
+      );
+    }
+  }
+
   // ---- Per-bidder limits ----
   const myBids = await prisma.bid.findMany({
     where: {
@@ -157,22 +195,36 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
   // bid must record a zero fee — otherwise the bidder's "fees paid" total and
   // the revenue reports would claim income that was never collected.
   const feesEnabled = Boolean(settings['payments.enabled']) && !input.isTest;
-  const feeAmount = feesEnabled ? toNum(auction.bidFee) : 0;
   const sequence = myBids.length + 1;
 
-  const bid = await prisma.bid.create({
-    data: {
-      auctionId: auction.id,
-      bidderId: bidder.id,
-      amount,
-      feeAmount,
-      status: 'PENDING_PAYMENT',
-      channel: input.isTest ? 'TEST' : 'MINIAPP',
-      sequence,
-      ipAddress: input.ipAddress ?? undefined,
-      userAgent: input.userAgent?.slice(0, 1000) ?? undefined,
-    },
-  });
+  // A bid the bidder already paid for in an earlier round of this chain costs
+  // nothing now. Claiming the credit first is what stops the same bid being
+  // charged twice; if the bid then fails to record, the credit goes back.
+  const carriedOver = feesEnabled ? await claimBidCredit(bidder.id, auction.id) : false;
+  const feeAmount = feesEnabled && !carriedOver ? toNum(auction.bidFee) : 0;
+
+  let bid;
+  try {
+    bid = await prisma.bid.create({
+      data: {
+        auctionId: auction.id,
+        bidderId: bidder.id,
+        amount,
+        feeAmount,
+        status: 'PENDING_PAYMENT',
+        channel: input.isTest ? 'TEST' : 'MINIAPP',
+        sequence,
+        carriedOver,
+        ipAddress: input.ipAddress ?? undefined,
+        userAgent: input.userAgent?.slice(0, 1000) ?? undefined,
+      },
+    });
+  } catch (error) {
+    if (carriedOver) await releaseBidCredit(bidder.id, auction.id);
+    throw error;
+  }
+
+  const carriedBidsRemaining = carriedOver ? await remainingCredits(bidder.id, auction.id) : 0;
 
   await createAuditLog({
     actorId: bidder.phoneNumber,
@@ -181,16 +233,27 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
     action: 'BID_PLACED',
     entity: 'Bid',
     entityId: bid.id,
-    details: { auctionId: auction.id, auctionCode: auction.code, amount, feeAmount, sequence },
+    details: {
+      auctionId: auction.id,
+      auctionCode: auction.code,
+      amount,
+      feeAmount,
+      sequence,
+      carriedOver,
+      reauctionRound: auction.reauctionRound,
+    },
     ipAddress: input.ipAddress,
     userAgent: input.userAgent,
   });
 
   const remainingBids = auction.maxBidsPerUser - sequence;
 
-  // Fees disabled (pilot mode): confirm immediately, no gateway round-trip.
+  // Nothing to charge: pilot mode, a test session, or a bid already paid for in
+  // an earlier round. Confirm immediately, no gateway round-trip.
   if (!feesEnabled || feeAmount <= 0) {
-    await confirmBid(bid.id, { source: input.isTest ? 'TEST_SESSION' : 'NO_FEE' });
+    await confirmBid(bid.id, {
+      source: carriedOver ? 'CARRIED_OVER' : input.isTest ? 'TEST_SESSION' : 'NO_FEE',
+    });
     return {
       bidId: bid.id,
       amount,
@@ -198,6 +261,8 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
       status: 'ACTIVE',
       sequence,
       remainingBids,
+      carriedOver,
+      carriedBidsRemaining,
     };
   }
 
@@ -220,6 +285,8 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
       sequence,
       transactionId: payment.transactionId,
       remainingBids,
+      carriedOver,
+      carriedBidsRemaining,
     };
   } catch (error) {
     // The payment never started, so the bid must not linger as pending.
@@ -330,12 +397,15 @@ export async function failBid(bidId: string, reason: string) {
     data: { status: 'FAILED', voidedAt: new Date(), voidReason: reason.slice(0, 400) },
   });
 
+  // A bid that never counted must not consume the prepaid bid that funded it.
+  if (bid.carriedOver) await releaseBidCredit(bid.bidderId, bid.auctionId);
+
   await createAuditLog({
     actorId: 'SYSTEM',
     actorType: 'SYSTEM',
     action: 'BID_FAILED',
     entity: 'Bid',
     entityId: bidId,
-    details: { reason },
+    details: { reason, carriedOver: bid.carriedOver },
   });
 }

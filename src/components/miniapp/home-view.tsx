@@ -57,6 +57,7 @@ export function HomeView({
   stats,
   connected = false,
   bidCounts = {},
+  carriedBids = {},
 }: {
   tagline: string;
   categories: HomeCategory[];
@@ -69,6 +70,8 @@ export function HomeView({
   connected?: boolean;
   /** Bids the signed-in bidder already holds, keyed by auction id. */
   bidCounts?: Record<string, number>;
+  /** Prepaid bids carried into a re-auction, keyed by auction id. */
+  carriedBids?: Record<string, number>;
 }) {
   const { t, lang } = useLanguage();
   const favoriteSet = new Set(favorites);
@@ -190,6 +193,7 @@ export function HomeView({
                 index={index}
                 connected={connected}
                 bidsUsed={bidCounts[auction.id] ?? 0}
+                carriedBids={carriedBids[auction.id] ?? 0}
               />
             ))}
           </div>
@@ -219,6 +223,7 @@ export function HomeView({
                 index={index}
                 connected={connected}
                 bidsUsed={bidCounts[auction.id] ?? 0}
+                carriedBids={carriedBids[auction.id] ?? 0}
               />
             ))
           )}

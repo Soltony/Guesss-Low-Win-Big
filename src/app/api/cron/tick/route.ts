@@ -78,6 +78,8 @@ export async function POST(req: NextRequest) {
     ended: lifecycle.ended,
     expiredBids: expired,
     settled: settlements.filter((s) => s.settled).length,
+    reauctionsCreated: settlements.filter((s) => s.reauctionAuctionId).length,
+    reauctionsPending: settlements.filter((s) => s.reauctionState === 'PENDING').length,
     winnersNotified,
     endingSoonNotified,
     durationMs: Date.now() - startedAt,

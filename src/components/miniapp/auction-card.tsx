@@ -46,6 +46,7 @@ export function AuctionCard({
   index = 0,
   connected = false,
   bidsUsed = 0,
+  carriedBids = 0,
 }: {
   auction: PublicAuction;
   favorited?: boolean;
@@ -55,6 +56,8 @@ export function AuctionCard({
   connected?: boolean;
   /** Bids this bidder already holds on this auction, for the remaining count. */
   bidsUsed?: number;
+  /** Bids paid for in an earlier round that this bidder can spend here free. */
+  carriedBids?: number;
 }) {
   const { t } = useLanguage();
   const [bidding, setBidding] = useState(false);
@@ -103,6 +106,14 @@ export function AuctionCard({
 
         <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           <span className="font-mono font-medium">#{auction.code}</span>
+          {auction.reauctionRound > 0 && (
+            <>
+              <span aria-hidden>·</span>
+              <span className="font-semibold text-primary">
+                Re-auction R{auction.reauctionRound}
+              </span>
+            </>
+          )}
           {auction.categoryName && (
             <>
               <span aria-hidden>·</span>
@@ -192,6 +203,7 @@ export function AuctionCard({
             auction={auction}
             connected={connected}
             bidsUsed={bidsUsed}
+            carriedBids={carriedBids}
             variant="inline"
             onClose={() => setBidding(false)}
           />
