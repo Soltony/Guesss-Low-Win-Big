@@ -52,9 +52,14 @@ export default async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
   const nonce = btoa(crypto.randomUUID());
 
+  // React's development build uses eval() for debugging features; the
+  // production build never does. Allowing it in dev only keeps the shipped
+  // policy strict while removing a permanent console error locally.
+  const devEval = process.env.NODE_ENV === 'production' ? '' : " 'unsafe-eval'";
+
   const csp = `
     default-src 'self';
-    script-src 'self' 'nonce-${nonce}' 'strict-dynamic';
+    script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${devEval};
     style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
     font-src 'self' https://fonts.gstatic.com data:;
     img-src 'self' data: blob: https:;

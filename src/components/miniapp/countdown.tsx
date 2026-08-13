@@ -35,16 +35,37 @@ export function Countdown({
     if (mounted && c.ended) onEnd?.();
   }, [mounted, c.ended, onEnd]);
 
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const urgent = mounted && c.total < 60 * 60 * 1000;
+
+  // Server and client clocks differ, so the real value can only be rendered
+  // after mount. The placeholder mirrors the final shape exactly, so nothing
+  // shifts when the timer takes over.
   if (!mounted) {
-    return <span className={cn('tabular-nums text-muted-foreground', className)}>··:··:··</span>;
+    if (variant === 'blocks') {
+      return (
+        <div className={cn('flex gap-1.5', className)} aria-hidden>
+          {['days', 'hrs', 'min', 'sec'].map((label) => (
+            <div key={label} className="gl-digit">
+              <span className="text-xl font-bold leading-none tabular-nums text-white/35">--</span>
+              <span className="mt-1 text-[9px] uppercase tracking-wider text-white/35">
+                {label}
+              </span>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    return (
+      <span className={cn('tabular-nums text-muted-foreground', className)} aria-hidden>
+        --:--:--
+      </span>
+    );
   }
 
   if (c.ended) {
     return <span className={cn('font-medium text-muted-foreground', className)}>Ended</span>;
   }
-
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const urgent = c.total < 60 * 60 * 1000;
 
   if (variant === 'blocks') {
     const parts = [
@@ -53,27 +74,22 @@ export function Countdown({
       { value: c.minutes, label: 'min' },
       { value: c.seconds, label: 'sec' },
     ];
+
     return (
-      <div className={cn('flex gap-2', className)}>
+      <div className={cn('flex gap-1.5', className)}>
         {parts.map((part) => (
-          <div
-            key={part.label}
-            className={cn(
-              'min-w-[52px] rounded-md border px-2 py-1.5 text-center',
-              urgent ? 'border-accent/40 bg-accent/5' : 'border-border bg-card'
-            )}
-          >
-            <p
+          <div key={part.label} className="gl-digit">
+            <span
               className={cn(
-                'text-lg font-semibold tabular-nums leading-none',
+                'text-xl font-bold leading-none tabular-nums',
                 urgent && 'text-accent'
               )}
             >
               {pad(part.value)}
-            </p>
-            <p className="mt-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+            </span>
+            <span className="mt-1 text-[9px] uppercase tracking-wider text-white/55">
               {part.label}
-            </p>
+            </span>
           </div>
         ))}
       </div>
@@ -84,20 +100,14 @@ export function Countdown({
 
   if (variant === 'pill') {
     return (
-      <span
-        className={cn(
-          'gl-pill tabular-nums',
-          urgent && 'border-accent/40 text-accent',
-          className
-        )}
-      >
+      <span className={cn('gl-pill tabular-nums', urgent && 'border-accent/50 text-accent', className)}>
         {text}
       </span>
     );
   }
 
   return (
-    <span className={cn('font-medium tabular-nums', urgent && 'text-accent', className)}>
+    <span className={cn('tabular-nums', urgent ? 'text-accent' : 'text-foreground', className)}>
       {text}
     </span>
   );

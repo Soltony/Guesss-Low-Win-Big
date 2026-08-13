@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, Loader2, PackageCheck, Trophy } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { MiniHero } from './section-heading';
 import { useLanguage } from './language-provider';
 import { Badge } from '@/components/ui/badge';
 
@@ -145,22 +146,17 @@ export function WinsList({
   const totalPaid = wins.reduce((sum, w) => sum + w.amount, 0);
 
   return (
-    <div className="pb-8">
-      <div className="border-b border-border bg-card px-4 pb-4 pt-4">
-        <h1 className="text-lg font-semibold tracking-tight">{t('wins.title')}</h1>
-        <dl className="mt-3 grid grid-cols-3 gap-px overflow-hidden rounded-md border border-border bg-border">
-          {[
-            { label: 'Wins', value: String(wins.length) },
-            { label: 'Paid', value: totalPaid.toFixed(2) },
-            { label: 'Retail value', value: totalValue.toFixed(0) },
-          ].map((stat) => (
-            <div key={stat.label} className="bg-card px-3 py-2.5 text-center">
-              <dd className="text-base font-semibold tabular-nums leading-none">{stat.value}</dd>
-              <dt className="mt-1 text-[11px] text-muted-foreground">{stat.label}</dt>
-            </div>
-          ))}
-        </dl>
-      </div>
+    <div className="pb-10">
+      <MiniHero
+        title={t('wins.title')}
+        subtitle="Prizes you have taken with a lowest unique bid."
+        icon={Trophy}
+        stats={[
+          { label: 'Wins', value: wins.length },
+          { label: 'Paid', value: totalPaid.toFixed(2) },
+          { label: 'Retail value', value: totalValue.toFixed(0) },
+        ]}
+      />
 
       <ul className="space-y-3 px-4 pt-4">
         {wins.map((win) => {
@@ -172,9 +168,9 @@ export function WinsList({
           const savings = win.retailPrice - win.amount;
 
           return (
-            <li key={win.id} className="gl-panel p-4">
+            <li key={win.id} className="gl-card p-4">
               <div className="flex gap-3">
-                <span className="gl-media h-14 w-14 shrink-0">
+                <span className="gl-product h-14 w-14 shrink-0 rounded-xl">
                   {win.imageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img

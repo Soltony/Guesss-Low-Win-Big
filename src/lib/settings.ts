@@ -59,10 +59,11 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
   {
     key: 'platform.tagline',
     label: 'Tagline',
-    description: 'Headline under the hero banner on the mini-app home page.',
+    description:
+      'Strapline under the hero headline on the mini-app home page. Explains the offer — the headline already carries the slogan.',
     category: 'platform',
     type: 'string',
-    default: 'Bid Low! Win Big!',
+    default: 'Win premium items for a fraction of what they are worth.',
   },
   {
     key: 'platform.currency',

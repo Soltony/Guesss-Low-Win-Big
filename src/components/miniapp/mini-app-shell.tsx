@@ -19,13 +19,13 @@ export interface ShellUser {
   isTest: boolean;
 }
 
-/** Two-state segmented control — clearer than a dropdown for exactly two languages. */
+/** Segmented control — clearer than a dropdown for exactly two languages. */
 function LanguageToggle() {
   const { lang, setLang } = useLanguage();
 
   return (
     <div
-      className="flex items-center rounded-md border border-border p-0.5"
+      className="flex items-center rounded-full bg-white/10 p-0.5"
       role="group"
       aria-label="Language"
     >
@@ -36,10 +36,10 @@ function LanguageToggle() {
           onClick={() => setLang(option.value)}
           aria-pressed={lang === option.value}
           className={cn(
-            'rounded px-2 py-0.5 text-xs font-medium transition-colors',
+            'rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors',
             lang === option.value
-              ? 'bg-secondary text-foreground'
-              : 'text-muted-foreground hover:text-foreground'
+              ? 'bg-primary text-primary-foreground'
+              : 'text-white/70 hover:text-white'
           )}
         >
           {option.short}
@@ -51,11 +51,13 @@ function LanguageToggle() {
 
 function TopBar({ user }: { user: ShellUser | null }) {
   return (
-    <header className="sticky top-0 z-30 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
-      <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 py-3">
+    <header className="gl-ink sticky top-0 z-30">
+      <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-4 py-3">
         <Link href="/" className="flex items-center gap-2" aria-label="GuessLow home">
-          <Logo className="h-7 w-7 text-foreground" />
-          <span className="text-[15px] font-semibold tracking-tight">GuessLow</span>
+          <Logo className="h-8 w-8 text-black" />
+          <span className="text-[17px] font-bold tracking-tight">
+            Guess<span className="text-primary">Low</span>
+          </span>
         </Link>
 
         <div className="flex-1" />
@@ -64,17 +66,17 @@ function TopBar({ user }: { user: ShellUser | null }) {
 
         <Link
           href="/my-bids"
-          className="gl-pill hover:bg-secondary"
+          className="gl-chip-dark hover:bg-white/20"
           aria-label={`${user?.activeBids ?? 0} active bids`}
         >
-          <Gavel className="h-3.5 w-3.5 text-muted-foreground" />
+          <Gavel className="h-3.5 w-3.5" />
           <span className="tabular-nums">{user?.activeBids ?? 0}</span>
         </Link>
 
         <Link
           href="/profile"
           aria-label="Profile"
-          className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
         >
           <User className="h-4 w-4" />
         </Link>
@@ -96,10 +98,10 @@ function BottomNav() {
   const { t } = useLanguage();
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card">
+    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 backdrop-blur">
       <div
-        className="mx-auto grid w-full max-w-3xl grid-cols-5"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+        className="mx-auto grid w-full max-w-3xl grid-cols-5 px-1 pt-1.5"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.375rem)' }}
       >
         {NAV.map((item) => {
           const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
@@ -110,27 +112,22 @@ function BottomNav() {
               key={item.href}
               href={item.href}
               aria-current={active ? 'page' : undefined}
-              className="relative flex flex-col items-center gap-1 px-1 pb-2 pt-2.5"
+              className="flex flex-col items-center gap-1 py-1"
             >
-              {/* The active marker is a short rule above the icon, so the bar
-                  stays quiet and nothing shifts as you navigate. */}
+              {/* The active item gets a filled gold tile — unmistakable at a
+                  glance, and nothing reflows as you move between tabs. */}
               <span
                 className={cn(
-                  'absolute inset-x-0 top-0 mx-auto h-0.5 w-8 rounded-full transition-colors',
-                  active ? 'bg-primary' : 'bg-transparent'
+                  'flex h-8 w-12 items-center justify-center rounded-full transition-colors',
+                  active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'
                 )}
-              />
-              <Icon
-                className={cn(
-                  'h-[18px] w-[18px] transition-colors',
-                  active ? 'text-foreground' : 'text-muted-foreground'
-                )}
-                strokeWidth={active ? 2.25 : 1.75}
-              />
+              >
+                <Icon className="h-[18px] w-[18px]" strokeWidth={active ? 2.4 : 1.8} />
+              </span>
               <span
                 className={cn(
-                  'truncate text-[10px] font-medium transition-colors',
-                  active ? 'text-foreground' : 'text-muted-foreground'
+                  'truncate text-[10px] transition-colors',
+                  active ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground'
                 )}
               >
                 {t(item.label)}
@@ -155,11 +152,11 @@ export function MiniAppShell({
       <div className="flex min-h-screen flex-col bg-background">
         {user?.isTest && (
           <div className="bg-accent px-4 py-1.5 text-center text-[11px] font-semibold uppercase tracking-wide text-accent-foreground">
-            Test session — authorization bypassed, no fees are charged
+            Test session — authorization bypassed, no fees charged
           </div>
         )}
         <TopBar user={user} />
-        <main className="mx-auto w-full max-w-3xl flex-1 pb-20">{children}</main>
+        <main className="mx-auto w-full max-w-3xl flex-1 pb-24">{children}</main>
         <BottomNav />
       </div>
     </LanguageProvider>

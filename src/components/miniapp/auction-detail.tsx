@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   Eye,
+  Flame,
   Loader2,
   Lock,
   Package,
@@ -40,8 +41,10 @@ interface DetailAuction extends PublicAuction {
 function Fact({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="bg-card px-4 py-3">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 text-sm font-semibold tabular-nums">{value}</dd>
+      <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </dt>
+      <dd className="mt-1 text-sm font-bold tabular-nums">{value}</dd>
     </div>
   );
 }
@@ -64,161 +67,183 @@ export function AuctionDetail({
   const currency = auction.currency === 'ETB' ? 'Br' : auction.currency;
   const isLive = auction.status === 'LIVE';
   const images = auction.images;
+  const endsWithin24h = new Date(auction.endAt).getTime() - Date.now() < 86_400_000;
 
   return (
-    <div className="pb-8">
-      {/* Back bar */}
-      <div className="flex items-center gap-1 border-b border-border bg-card px-2 py-2">
-        <Link
-          href="/auctions"
-          aria-label="Back to auctions"
-          className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
-        <span className="line-clamp-1 flex-1 text-sm font-medium">{auction.title}</span>
-        <div className="px-2">
-          <FavoriteButton auctionId={auction.id} initial={favorited} />
-        </div>
-      </div>
+    <div className="pb-10">
+      {/* ---------- Dark header: back bar, gallery, title ---------- */}
+      <section className="gl-ink gl-spotlight relative overflow-hidden pb-8">
+        <div className="gl-dots pointer-events-none absolute inset-0 opacity-60" />
 
-      {/* Gallery */}
-      <section className="bg-card px-4 pb-5 pt-4">
-        <div className="gl-media aspect-[4/3] w-full">
-          {images.length > 0 ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={images[activeImage]}
-              alt={auction.title}
-              className="h-full w-full object-contain p-4"
-            />
-          ) : (
-            <Package className="h-10 w-10 text-muted-foreground" strokeWidth={1.25} />
-          )}
+        <div className="relative flex items-center gap-1 px-2 py-2">
+          <Link
+            href="/auctions"
+            aria-label="Back to auctions"
+            className="rounded-full p-2 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
+          <span className="line-clamp-1 flex-1 text-sm font-medium text-white/80">
+            {auction.title}
+          </span>
+          <span className="rounded-full bg-white/10 p-2">
+            <FavoriteButton auctionId={auction.id} initial={favorited} onDark />
+          </span>
         </div>
 
-        {images.length > 1 && (
-          <div className="no-scrollbar mt-2 flex gap-2 overflow-x-auto">
-            {images.map((image, index) => (
-              <button
-                key={image}
-                type="button"
-                onClick={() => setActiveImage(index)}
-                aria-label={`View image ${index + 1}`}
-                aria-current={index === activeImage}
-                className={cn(
-                  'gl-media h-14 w-14 shrink-0 border transition-colors',
-                  index === activeImage ? 'border-foreground' : 'border-transparent'
-                )}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={image} alt="" className="h-full w-full object-contain p-1" />
-              </button>
-            ))}
-          </div>
-        )}
+        {/* Gallery on a light plate, so the product reads clearly against the ink */}
+        <div className="relative px-4 pt-2">
+          <div className="gl-product aspect-[4/3] w-full rounded-2xl">
+            {images.length > 0 ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={images[activeImage]}
+                alt={auction.title}
+                className="h-full w-full object-contain p-6 drop-shadow-[0_16px_28px_rgba(15,23,42,0.22)]"
+              />
+            ) : (
+              <Package className="h-14 w-14 text-muted-foreground/60" strokeWidth={1.25} />
+            )}
 
-        {/* Title block */}
-        <div className="mt-4 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2 text-xs">
+            <div className="absolute inset-x-3 top-3 flex items-start justify-between">
               {isLive ? (
-                <span className="inline-flex items-center gap-1.5 font-medium text-accent">
-                  <span className="gl-live-dot" />
-                  {t('auction.live')}
+                <span
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide shadow-sm',
+                    endsWithin24h
+                      ? 'bg-accent text-accent-foreground'
+                      : 'bg-white/95 text-foreground'
+                  )}
+                >
+                  {endsWithin24h ? <Flame className="h-3 w-3" /> : <span className="gl-live-dot" />}
+                  {endsWithin24h ? 'Ending soon' : t('auction.live')}
                 </span>
               ) : (
-                <span className="font-medium text-muted-foreground">
+                <span className="rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-muted-foreground shadow-sm">
                   {auction.status === 'SCHEDULED' ? t('auction.scheduled') : t('auction.ended')}
                 </span>
               )}
-              <span className="text-muted-foreground">·</span>
-              <span className="font-mono text-muted-foreground">#{auction.code}</span>
+
+              {auction.viewCount !== null && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-foreground/80 px-2.5 py-1 text-[11px] font-semibold text-background backdrop-blur">
+                  <Eye className="h-3 w-3" />
+                  {compactNumber(auction.viewCount)}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {images.length > 1 && (
+            <div className="no-scrollbar mt-2.5 flex gap-2 overflow-x-auto">
+              {images.map((image, index) => (
+                <button
+                  key={image}
+                  type="button"
+                  onClick={() => setActiveImage(index)}
+                  aria-label={`View image ${index + 1}`}
+                  aria-current={index === activeImage}
+                  className={cn(
+                    'gl-media h-14 w-14 shrink-0 border-2 transition-colors',
+                    index === activeImage ? 'border-primary' : 'border-transparent opacity-60'
+                  )}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={image} alt="" className="h-full w-full object-contain p-1" />
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-4">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-white/60">
+              <span className="font-mono font-medium">#{auction.code}</span>
               {auction.categoryName && (
                 <>
-                  <span className="text-muted-foreground">·</span>
-                  <span className="text-muted-foreground">{auction.categoryName}</span>
+                  <span aria-hidden>·</span>
+                  <span>{auction.categoryName}</span>
+                </>
+              )}
+              {auction.bidCount !== null && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span>
+                    {compactNumber(auction.bidCount)} {t('auction.bids')}
+                  </span>
                 </>
               )}
             </div>
 
-            <h1 className="mt-2 text-xl font-semibold leading-snug tracking-tight">
+            <h1 className="mt-2 text-[26px] font-extrabold leading-tight tracking-tight">
               {auction.title}
             </h1>
             {auction.subtitle && (
-              <p className="mt-1 text-sm text-muted-foreground">{auction.subtitle}</p>
+              <p className="mt-1.5 text-sm text-white/65">{auction.subtitle}</p>
+            )}
+
+            {auction.retailPrice > 0 && (
+              <p className="mt-3 flex items-baseline gap-2 text-sm">
+                <span className="text-white/55">{t('auction.retailPrice')}</span>
+                <span className="gl-was font-semibold text-white/80">
+                  {auction.retailPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}{' '}
+                  {currency}
+                </span>
+              </p>
+            )}
+
+            {isLive && (
+              <div className="mt-4">
+                <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-white/50">
+                  Closes in
+                </p>
+                <Countdown endAt={auction.endAt} variant="blocks" />
+              </div>
             )}
           </div>
-
-          {auction.viewCount !== null && (
-            <span className="flex shrink-0 items-center gap-1 pt-0.5 text-xs text-muted-foreground">
-              <Eye className="h-3.5 w-3.5" />
-              {compactNumber(auction.viewCount)}
-            </span>
-          )}
         </div>
       </section>
 
-      {/* Countdown */}
-      {isLive && (
-        <section className="px-4 pt-4">
-          <div className="gl-panel px-4 py-3">
-            <p className="text-xs text-muted-foreground">Closes in</p>
-            <div className="mt-2">
-              <Countdown endAt={auction.endAt} variant="blocks" />
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Facts */}
-      <section className="px-4 pt-4">
+      {/* ---------- Facts ---------- */}
+      <section className="px-4 pt-5">
         {/* gap-px over a border-coloured backdrop gives clean hairlines in both
             directions without divide-x/y edge cases at the row breaks. */}
-        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border">
-          <Fact
-            label={t('auction.bidFee')}
-            value={`${auction.bidFee.toFixed(2)} ${currency}`}
-          />
+        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border">
+          <Fact label={t('auction.bidFee')} value={`${auction.bidFee.toFixed(2)} ${currency}`} />
           <Fact
             label={t('auction.range')}
             value={`${auction.minBidAmount.toFixed(2)} – ${auction.maxBidAmount.toFixed(2)}`}
           />
-          <Fact
-            label={t('auction.retailPrice')}
-            value={
-              auction.retailPrice > 0
-                ? `${auction.retailPrice.toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                  })} ${currency}`
-                : '—'
-            }
-          />
-          <Fact
-            label={t('auction.bids')}
-            value={auction.bidCount !== null ? compactNumber(auction.bidCount) : '—'}
-          />
+          <Fact label="Bid increment" value={auction.bidStep.toFixed(2)} />
+          <Fact label="Max bids per person" value={auction.maxBidsPerUser} />
         </dl>
       </section>
 
-      {/* Result or bidding */}
+      {/* ---------- Result or bidding ---------- */}
       <section className="px-4 pt-4">
         {auction.settled ? (
-          <div className="gl-panel p-4">
-            <p className="flex items-center gap-2 text-sm font-semibold">
-              <Trophy className="h-4 w-4 text-primary" />
-              {auction.winner ? t('auction.winner') : t('auction.noWinner')}
-            </p>
+          <div className="gl-card overflow-hidden">
+            <div className="gl-ink gl-spotlight relative px-4 py-3">
+              <p className="relative flex items-center gap-2 text-sm font-bold">
+                <Trophy className="h-4 w-4 text-primary" />
+                {auction.winner ? t('auction.winner') : t('auction.noWinner')}
+              </p>
+            </div>
             {auction.winner && (
-              <div className="mt-3 flex items-end justify-between gap-3 border-t border-border pt-3">
+              <div className="flex items-end justify-between gap-3 p-4">
                 <div>
-                  <p className="text-xs text-muted-foreground">{t('auction.winner')}</p>
-                  <p className="text-sm font-medium">{auction.winner.displayName}</p>
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Taken by
+                  </p>
+                  <p className="text-sm font-semibold">{auction.winner.displayName}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-xs text-muted-foreground">{t('auction.winningBid')}</p>
-                  <p className="text-lg font-semibold tabular-nums">
-                    {auction.winner.amount.toFixed(2)} {currency}
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {t('auction.winningBid')}
+                  </p>
+                  <p className="text-2xl font-bold leading-none tabular-nums text-primary">
+                    {auction.winner.amount.toFixed(2)}
+                    <span className="ml-1 text-sm font-semibold text-muted-foreground">
+                      {currency}
+                    </span>
                   </p>
                 </div>
               </div>
@@ -227,7 +252,7 @@ export function AuctionDetail({
         ) : !connected ? (
           <Link
             href="/connect"
-            className="flex w-full items-center justify-center rounded-md bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+            className="gl-gold flex w-full items-center justify-center rounded-xl px-4 py-3.5 text-sm font-bold"
           >
             Connect to bid
           </Link>
@@ -236,26 +261,26 @@ export function AuctionDetail({
         )}
       </section>
 
-      {/* My bids */}
-      <section className="px-4 pt-6">
+      {/* ---------- My bids ---------- */}
+      <section className="px-4 pt-7">
         <div className="gl-section-rule mb-3">
-          <h2 className="text-sm font-semibold">
+          <h2 className="text-base font-bold tracking-tight">
             {t('auction.yourBids')}{' '}
-            <span className="font-normal text-muted-foreground">
+            <span className="font-medium text-muted-foreground">
               {myBids.length}/{auction.maxBidsPerUser}
             </span>
           </h2>
         </div>
 
         {!revealAllowed && myBids.length > 0 && (
-          <p className="mb-2 flex items-start gap-1.5 text-xs text-muted-foreground">
+          <p className="mb-2 flex items-start gap-1.5 rounded-lg bg-secondary/70 px-3 py-2 text-xs text-muted-foreground">
             <Lock className="mt-0.5 h-3 w-3 shrink-0" />
             {t('bid.hiddenUntilEnd')}
           </p>
         )}
 
         {myBids.length === 0 ? (
-          <p className="gl-panel px-4 py-6 text-center text-xs text-muted-foreground">
+          <p className="gl-panel px-4 py-7 text-center text-xs text-muted-foreground">
             {t('auction.noBidsYet')}
           </p>
         ) : (
@@ -263,9 +288,9 @@ export function AuctionDetail({
             {myBids.map((bid) => (
               <li key={bid.id} className="flex items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold tabular-nums">
+                  <p className="text-base font-bold tabular-nums">
                     {bid.amount.toFixed(2)}{' '}
-                    <span className="text-xs font-normal text-muted-foreground">{currency}</span>
+                    <span className="text-xs font-medium text-muted-foreground">{currency}</span>
                   </p>
                   <p className="mt-0.5 text-[11px] text-muted-foreground">
                     #{bid.sequence} · {new Date(bid.createdAt).toLocaleString('en-GB')}
@@ -276,8 +301,10 @@ export function AuctionDetail({
                   {revealAllowed && bid.isUnique !== null && (
                     <span
                       className={cn(
-                        'text-xs font-medium',
-                        bid.isUnique ? 'text-foreground' : 'text-muted-foreground'
+                        'rounded-full px-2 py-0.5 text-[11px] font-bold',
+                        bid.isUnique
+                          ? 'bg-primary/15 text-foreground'
+                          : 'bg-secondary text-muted-foreground'
                       )}
                     >
                       {bid.isUnique ? t('bid.unique') : t('bid.taken')}
@@ -304,11 +331,11 @@ export function AuctionDetail({
         )}
       </section>
 
-      {/* Description */}
+      {/* ---------- Description ---------- */}
       {auction.description && (
-        <section className="px-4 pt-6">
+        <section className="px-4 pt-7">
           <div className="gl-section-rule mb-3">
-            <h2 className="text-sm font-semibold">About this item</h2>
+            <h2 className="text-base font-bold tracking-tight">About this item</h2>
           </div>
           <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
             {auction.description}
@@ -316,12 +343,12 @@ export function AuctionDetail({
         </section>
       )}
 
-      {/* Rules and terms */}
-      <section className="space-y-2 px-4 pt-6">
+      {/* ---------- Rules and terms ---------- */}
+      <section className="space-y-2 px-4 pt-7">
         <details className="gl-panel group px-4 py-3">
-          <summary className="cursor-pointer list-none text-sm font-medium">
+          <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold">
             {t('home.howItWorks')}
-            <span className="float-right text-muted-foreground transition-transform group-open:rotate-180">
+            <span className="text-muted-foreground transition-transform group-open:rotate-180">
               ⌄
             </span>
           </summary>
@@ -332,9 +359,9 @@ export function AuctionDetail({
 
         {auction.terms && (
           <details className="gl-panel group px-4 py-3">
-            <summary className="cursor-pointer list-none text-sm font-medium">
-              {auction.terms.title}
-              <span className="float-right text-muted-foreground transition-transform group-open:rotate-180">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-semibold">
+              <span className="min-w-0 truncate">{auction.terms.title}</span>
+              <span className="text-muted-foreground transition-transform group-open:rotate-180">
                 ⌄
               </span>
             </summary>

@@ -76,36 +76,44 @@ export function ProfileView({
   return (
     <div className="pb-8">
       {/* Identity */}
-      <div className="border-b border-border bg-card px-4 pb-4 pt-5">
-        <div className="flex items-center gap-3">
-          <span className="flex h-12 w-12 items-center justify-center rounded-md bg-secondary">
-            <User className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
-          </span>
-          <div className="min-w-0">
-            <p className="truncate text-base font-semibold tracking-tight">
-              {profile.fullName || 'GuessLow bidder'}
-            </p>
-            <p className="font-mono text-xs text-muted-foreground">{profile.phone}</p>
-          </div>
-        </div>
-
-        <dl className="mt-4 grid grid-cols-3 gap-px overflow-hidden rounded-md border border-border bg-border">
-          {[
-            { label: 'Bids', value: profile.totalBids },
-            { label: 'Auctions', value: profile.auctionsEntered },
-            { label: 'Wins', value: profile.winsCount },
-          ].map((stat) => (
-            <div key={stat.label} className="bg-card px-3 py-2.5 text-center">
-              <dd className="text-base font-semibold tabular-nums leading-none">{stat.value}</dd>
-              <dt className="mt-1 text-[11px] text-muted-foreground">{stat.label}</dt>
+      <div className="gl-ink gl-spotlight relative overflow-hidden px-4 pb-5 pt-5">
+        <div className="gl-dots pointer-events-none absolute inset-0 opacity-60" />
+        <div className="relative">
+          <div className="flex items-center gap-3">
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              <User className="h-7 w-7" strokeWidth={2} />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-lg font-bold tracking-tight">
+                {profile.fullName || 'GuessLow bidder'}
+              </p>
+              <p className="font-mono text-xs text-white/60">{profile.phone}</p>
             </div>
-          ))}
-        </dl>
+          </div>
 
-        <p className="mt-2 text-center text-[11px] text-muted-foreground">
-          {profile.totalSpent.toFixed(2)} Br in service fees · member since{' '}
-          {new Date(profile.memberSince).toLocaleDateString('en-GB')}
-        </p>
+          <dl className="mt-4 grid grid-cols-3 gap-2">
+            {[
+              { label: 'Bids', value: profile.totalBids },
+              { label: 'Auctions', value: profile.auctionsEntered },
+              { label: 'Wins', value: profile.winsCount },
+            ].map((stat) => (
+              <div
+                key={stat.label}
+                className="rounded-xl bg-white/10 px-2 py-2.5 text-center backdrop-blur"
+              >
+                <dd className="text-lg font-bold leading-none tabular-nums">{stat.value}</dd>
+                <dt className="mt-1.5 text-[10px] uppercase tracking-wide text-white/55">
+                  {stat.label}
+                </dt>
+              </div>
+            ))}
+          </dl>
+
+          <p className="mt-3 text-center text-[11px] text-white/55">
+            {profile.totalSpent.toFixed(2)} Br in service fees · member since{' '}
+            {new Date(profile.memberSince).toLocaleDateString('en-GB')}
+          </p>
+        </div>
       </div>
 
       {profile.status !== 'ACTIVE' && (
@@ -119,7 +127,7 @@ export function ProfileView({
 
       <div className="space-y-3 px-4 pt-4">
         {/* Display name */}
-        <div className="gl-panel p-4">
+        <div className="gl-card p-4">
           <label htmlFor="fullName" className="text-sm font-medium">
             Display name
           </label>
@@ -147,7 +155,7 @@ export function ProfileView({
         </div>
 
         {/* Language */}
-        <div className="gl-panel p-4">
+        <div className="gl-card p-4">
           <p className="text-sm font-medium">Language</p>
           <div className="mt-2 grid grid-cols-2 gap-2">
             {LANGUAGES.map((option) => (
@@ -170,7 +178,7 @@ export function ProfileView({
         </div>
 
         {/* Links */}
-        <nav className="gl-panel divide-y divide-border">
+        <nav className="gl-card divide-y divide-border overflow-hidden">
           {[
             { href: '/my-bids', label: t('nav.myBids'), icon: Gavel },
             { href: '/wins', label: t('wins.title'), icon: Trophy },
@@ -197,7 +205,7 @@ export function ProfileView({
         </nav>
 
         {terms && (
-          <details className="gl-panel group px-4 py-3">
+          <details className="gl-card group px-4 py-3">
             <summary className="flex cursor-pointer list-none items-center gap-3 text-sm font-medium">
               <ShieldCheck className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
               <span className="flex-1">{terms.title}</span>
@@ -214,7 +222,7 @@ export function ProfileView({
         <button
           type="button"
           onClick={disconnect}
-          className="gl-panel flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-secondary/50"
+          className="gl-card flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-destructive/5"
         >
           <LogOut className="h-4 w-4 text-destructive" strokeWidth={1.75} />
           <span className="flex-1 text-sm font-medium text-destructive">Disconnect session</span>

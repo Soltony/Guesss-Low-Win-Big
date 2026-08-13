@@ -8,9 +8,12 @@ import { useToast } from '@/hooks/use-toast';
 export function FavoriteButton({
   auctionId,
   initial = false,
+  onDark = false,
 }: {
   auctionId: string;
   initial?: boolean;
+  /** Sitting on an ink surface, so the resting colour has to invert. */
+  onDark?: boolean;
 }) {
   const [favorited, setFavorited] = useState(initial);
   const [pending, startTransition] = useTransition();
@@ -50,11 +53,14 @@ export function FavoriteButton({
       disabled={pending}
       aria-pressed={favorited}
       aria-label={favorited ? 'Remove from watchlist' : 'Save to watchlist'}
-      className="-m-1 shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+      className={cn(
+        'flex items-center justify-center transition-colors disabled:opacity-50',
+        onDark ? 'text-white/70 hover:text-white' : 'text-muted-foreground hover:text-foreground'
+      )}
     >
       <Bookmark
         className={cn('h-4 w-4', favorited && 'fill-primary text-primary')}
-        strokeWidth={1.75}
+        strokeWidth={2}
       />
     </button>
   );

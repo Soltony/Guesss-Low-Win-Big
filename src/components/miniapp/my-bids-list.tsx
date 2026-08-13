@@ -1,10 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { CheckCircle2, ChevronDown, Loader2, Lock, Package, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Gavel, Loader2, Lock, Package, XCircle } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Countdown } from './countdown';
+import { MiniHero } from './section-heading';
 import { useLanguage } from './language-provider';
 
 interface Entry {
@@ -60,22 +61,17 @@ export function MyBidsList({ entries, totalSpent }: { entries: Entry[]; totalSpe
   );
 
   return (
-    <div className="pb-8">
-      <div className="border-b border-border bg-card px-4 pb-4 pt-4">
-        <h1 className="text-lg font-semibold tracking-tight">{t('nav.myBids')}</h1>
-        <dl className="mt-3 grid grid-cols-3 gap-px overflow-hidden rounded-md border border-border bg-border">
-          {[
-            { label: 'Auctions', value: entries.length },
-            { label: 'Confirmed', value: activeBids },
-            { label: 'Fees paid', value: `${totalSpent.toFixed(0)} Br` },
-          ].map((stat) => (
-            <div key={stat.label} className="bg-card px-3 py-2.5 text-center">
-              <dd className="text-base font-semibold tabular-nums leading-none">{stat.value}</dd>
-              <dt className="mt-1 text-[11px] text-muted-foreground">{stat.label}</dt>
-            </div>
-          ))}
-        </dl>
-      </div>
+    <div className="pb-10">
+      <MiniHero
+        title={t('nav.myBids')}
+        subtitle="Your entries, grouped by auction."
+        icon={Gavel}
+        stats={[
+          { label: 'Auctions', value: entries.length },
+          { label: 'Confirmed', value: activeBids },
+          { label: 'Fees paid', value: `${totalSpent.toFixed(0)} Br` },
+        ]}
+      />
 
       <ul className="space-y-3 px-4 pt-4">
         {entries.map((entry) => {
@@ -84,14 +80,14 @@ export function MyBidsList({ entries, totalSpent }: { entries: Entry[]; totalSpe
           const confirmed = entry.bids.filter((b) => b.status === 'ACTIVE').length;
 
           return (
-            <li key={entry.auctionId} className="gl-panel overflow-hidden">
+            <li key={entry.auctionId} className="gl-card overflow-hidden">
               <button
                 type="button"
                 onClick={() => setOpen(isOpen ? null : entry.auctionId)}
                 aria-expanded={isOpen}
                 className="flex w-full items-center gap-3 p-3 text-left transition-colors hover:bg-secondary/50"
               >
-                <span className="gl-media h-12 w-12 shrink-0">
+                <span className="gl-product h-12 w-12 shrink-0 rounded-lg">
                   {entry.imageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
