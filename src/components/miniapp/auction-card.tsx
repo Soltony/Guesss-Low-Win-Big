@@ -1,10 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowRight, Flame, Package, Users } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowRight, ChevronUp, Flame, Package, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { compactNumber } from '@/lib/format';
 import { Countdown } from './countdown';
+import { BidPanel } from './bid-panel';
 import { useLanguage } from './language-provider';
 import { FavoriteButton } from './favorite-button';
 import type { PublicAuction } from '@/lib/miniapp-data';
@@ -35,22 +37,31 @@ function StatusChip({ status, urgent }: { status: string; urgent?: boolean }) {
 
 /**
  * The workhorse of every list. Leads with the product and the value on offer,
- * because that is what makes someone tap; the mechanics sit underneath.
+ * because that is what makes someone tap; the mechanics sit underneath — and
+ * the bid form opens in place, so a bid never needs the detail page.
  */
 export function AuctionCard({
   auction,
   favorited,
   index = 0,
+  connected = false,
+  bidsUsed = 0,
 }: {
   auction: PublicAuction;
   favorited?: boolean;
   /** Position in the list, used to stagger the entrance animation. */
   index?: number;
+  /** A bidder session exists, so the inline form can be opened. */
+  connected?: boolean;
+  /** Bids this bidder already holds on this auction, for the remaining count. */
+  bidsUsed?: number;
 }) {
   const { t } = useLanguage();
+  const [bidding, setBidding] = useState(false);
   const currency = auction.currency === 'ETB' ? 'Br' : auction.currency;
   const isLive = auction.status === 'LIVE';
   const endsWithin24h = new Date(auction.endAt).getTime() - Date.now() < 86_400_000;
+  const panelId = `bid-panel-${auction.id}`;
 
   return (
     <article
@@ -59,7 +70,7 @@ export function AuctionCard({
     >
       {/* Product */}
       <Link href={`/auctions/${auction.code}`} className="block" aria-label={auction.title}>
-        <div className="gl-product h-44">
+        <div className="gl-product h-64">
           {auction.imageUrl ? (
             /* Plain <img>: item photos come from arbitrary operator-supplied
                URLs, which the Next image optimizer's allow-list would reject. */
@@ -68,10 +79,10 @@ export function AuctionCard({
               src={auction.imageUrl}
               alt={auction.title}
               loading="lazy"
-              className="h-full w-full object-contain p-5 drop-shadow-[0_10px_18px_rgba(15,23,42,0.18)]"
+              className="h-full w-full object-contain p-3 drop-shadow-[0_10px_18px_rgba(15,23,42,0.18)]"
             />
           ) : (
-            <Package className="h-12 w-12 text-muted-foreground/60" strokeWidth={1.25} />
+            <Package className="h-14 w-14 text-muted-foreground/60" strokeWidth={1.25} />
           )}
 
           <div className="absolute inset-x-3 top-3 flex items-start justify-between">
@@ -80,14 +91,6 @@ export function AuctionCard({
               <FavoriteButton auctionId={auction.id} initial={favorited} />
             </span>
           </div>
-
-          {auction.retailPrice > 0 && (
-            <span className="absolute bottom-3 left-3 rounded-full bg-foreground/85 px-2.5 py-1 text-[11px] font-semibold text-background backdrop-blur">
-              Worth{' '}
-              {auction.retailPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}{' '}
-              {currency}
-            </span>
-          )}
         </div>
       </Link>
 
@@ -146,20 +149,54 @@ export function AuctionCard({
             <Countdown endAt={auction.endAt} className="text-sm font-bold" />
           </div>
 
-          <Link
-            href={`/auctions/${auction.code}`}
-            className={cn(
-              'inline-flex items-center gap-1.5 rounded-xl px-5 py-3 text-sm font-bold transition-colors',
-              isLive
-                ? 'gl-gold'
-                : 'border border-border text-foreground hover:bg-secondary'
-            )}
-          >
-            {isLive ? t('auction.submitBid') : t('auction.viewDetails')}
-            <ArrowRight className="h-4 w-4" />
-          </Link>
+          {!isLive ? (
+            <Link
+              href={`/auctions/${auction.code}`}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-border px-5 py-3 text-sm font-bold text-foreground transition-colors hover:bg-secondary"
+            >
+              {t('auction.viewDetails')}
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          ) : connected ? (
+            /* The bid form drops open right here — no page change, so the whole
+               flow (amount, fee approval, confirmation) finishes on this list. */
+            <button
+              type="button"
+              onClick={() => setBidding((open) => !open)}
+              aria-expanded={bidding}
+              aria-controls={panelId}
+              className="gl-gold inline-flex items-center gap-1.5 rounded-xl px-5 py-3 text-sm font-bold"
+            >
+              {t('auction.submitBid')}
+              {bidding ? (
+                <ChevronUp className="h-4 w-4" />
+              ) : (
+                <ArrowRight className="h-4 w-4" />
+              )}
+            </button>
+          ) : (
+            <Link
+              href="/connect"
+              className="gl-gold inline-flex items-center gap-1.5 rounded-xl px-5 py-3 text-sm font-bold"
+            >
+              Connect to bid
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          )}
         </div>
       </div>
+
+      {isLive && connected && bidding && (
+        <div id={panelId} className="gl-rise">
+          <BidPanel
+            auction={auction}
+            connected={connected}
+            bidsUsed={bidsUsed}
+            variant="inline"
+            onClose={() => setBidding(false)}
+          />
+        </div>
+      )}
     </article>
   );
 }

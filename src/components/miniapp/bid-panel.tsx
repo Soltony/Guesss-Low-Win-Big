@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CheckCircle2, Loader2, Minus, Plus, ShieldCheck, XCircle, Zap } from 'lucide-react';
+import { CheckCircle2, Loader2, Minus, Plus, ShieldCheck, X, XCircle, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useLanguage } from './language-provider';
@@ -15,12 +15,19 @@ interface Props {
   auction: PublicAuction;
   connected: boolean;
   bidsUsed: number;
+  /**
+   * `card` brings its own card chrome (the detail page); `inline` drops it and
+   * sits flush inside a host card, which is how the list cards embed it.
+   */
+  variant?: 'card' | 'inline';
+  /** Rendered as a close control in the header when the host can collapse it. */
+  onClose?: () => void;
 }
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 120_000;
 
-export function BidPanel({ auction, connected, bidsUsed }: Props) {
+export function BidPanel({ auction, connected, bidsUsed, variant = 'card', onClose }: Props) {
   const { t } = useLanguage();
   const { toast } = useToast();
   const router = useRouter();
@@ -29,7 +36,17 @@ export function BidPanel({ auction, connected, bidsUsed }: Props) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [message, setMessage] = useState<string | null>(null);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Several cards can have their form open at once, so the field needs an id
+  // of its own rather than a shared literal.
+  const amountId = useId();
 
+  /** Inline sits inside a list card, so it trims to the essentials. */
+  const compact = variant === 'inline';
+  /** Shared chrome for the awaiting/confirmed/failed notes under the button. */
+  const noteClass = cn(
+    'flex items-start gap-2 rounded-xl border px-3 py-2.5 leading-relaxed',
+    compact ? 'mt-2 text-[11px]' : 'mt-3 text-xs'
+  );
   const currency = auction.currency === 'ETB' ? 'Br' : auction.currency;
   const remaining = Math.max(0, auction.maxBidsPerUser - bidsUsed);
   const isLive = auction.status === 'LIVE';
@@ -144,32 +161,52 @@ export function BidPanel({ auction, connected, bidsUsed }: Props) {
   };
 
   return (
-    <div className="gl-card overflow-hidden">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
-        <p className="flex items-center gap-1.5 text-sm font-bold">
+    <div className={cn(compact ? 'border-t border-border' : 'gl-card overflow-hidden')}>
+      <div
+        className={cn(
+          'flex items-center justify-between gap-2 border-b border-border px-4',
+          compact ? 'py-2' : 'py-2.5'
+        )}
+      >
+        <p className={cn('flex items-center gap-1.5 font-bold', compact ? 'text-[13px]' : 'text-sm')}>
           <Zap className="h-4 w-4 text-primary" strokeWidth={2.5} />
           Place your bid
         </p>
-        <span className="gl-pill">
-          {remaining} {t('auction.bidsLeft')}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="gl-pill">
+            {remaining} {t('auction.bidsLeft')}
+          </span>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close bid form"
+              className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="p-4">
+      <div className={cn(compact ? 'p-3' : 'p-4')}>
         <div className="flex items-stretch gap-2">
           <button
             type="button"
             onClick={() => step(-1)}
             disabled={disabled}
             aria-label="Decrease bid amount"
-            className="flex w-12 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary/50 text-foreground transition-colors hover:bg-secondary disabled:opacity-40"
+            className={cn(
+              'flex shrink-0 items-center justify-center rounded-xl border border-border bg-secondary/50 text-foreground transition-colors hover:bg-secondary disabled:opacity-40',
+              compact ? 'w-11' : 'w-12'
+            )}
           >
-            <Minus className="h-5 w-5" />
+            <Minus className={compact ? 'h-4 w-4' : 'h-5 w-5'} />
           </button>
 
           <div className="relative min-w-0 flex-1">
             <input
-              id="bid-amount"
+              id={amountId}
               type="number"
               inputMode="decimal"
               value={amount}
@@ -180,7 +217,10 @@ export function BidPanel({ auction, connected, bidsUsed }: Props) {
               min={auction.minBidAmount}
               max={auction.maxBidAmount}
               step={auction.bidStep}
-              className="h-16 w-full rounded-xl border-2 border-input bg-background px-3 pr-12 text-center text-3xl font-extrabold tabular-nums outline-none transition-colors focus:border-primary disabled:opacity-60"
+              className={cn(
+                'w-full rounded-xl border-2 border-input bg-background px-3 pr-12 text-center font-extrabold tabular-nums outline-none transition-colors focus:border-primary disabled:opacity-60',
+                compact ? 'h-12 text-2xl' : 'h-16 text-3xl'
+              )}
             />
             <span className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground">
               {currency}
@@ -192,13 +232,21 @@ export function BidPanel({ auction, connected, bidsUsed }: Props) {
             onClick={() => step(1)}
             disabled={disabled}
             aria-label="Increase bid amount"
-            className="flex w-12 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary/50 text-foreground transition-colors hover:bg-secondary disabled:opacity-40"
+            className={cn(
+              'flex shrink-0 items-center justify-center rounded-xl border border-border bg-secondary/50 text-foreground transition-colors hover:bg-secondary disabled:opacity-40',
+              compact ? 'w-11' : 'w-12'
+            )}
           >
-            <Plus className="h-5 w-5" />
+            <Plus className={compact ? 'h-4 w-4' : 'h-5 w-5'} />
           </button>
         </div>
 
-        <p className="mt-2.5 text-center text-xs text-muted-foreground">
+        <p
+          className={cn(
+            'text-center text-muted-foreground',
+            compact ? 'mt-2 text-[11px]' : 'mt-2.5 text-xs'
+          )}
+        >
           {auction.minBidAmount.toFixed(2)} – {auction.maxBidAmount.toFixed(2)} {currency}, in steps
           of {auction.bidStep.toFixed(2)}
         </p>
@@ -208,7 +256,8 @@ export function BidPanel({ auction, connected, bidsUsed }: Props) {
           onClick={submit}
           disabled={disabled || remaining === 0}
           className={cn(
-            'gl-gold mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-4 text-base font-bold',
+            'gl-gold flex w-full items-center justify-center gap-2 rounded-xl px-4 font-bold',
+            compact ? 'mt-2.5 py-3 text-sm' : 'mt-3 py-4 text-base',
             (disabled || remaining === 0) && 'cursor-not-allowed opacity-50'
           )}
         >
@@ -226,12 +275,21 @@ export function BidPanel({ auction, connected, bidsUsed }: Props) {
           )}
         </button>
 
-        <p className="mt-2.5 text-center text-xs text-muted-foreground">
-          {t('bid.feeNotice', { fee: `${auction.bidFee.toFixed(2)} ${currency}` })}
-        </p>
+        {/* Inline has no room for the full notice plus a terms footer, so the
+            fee disclosure and the terms line collapse into one row. */}
+        {compact ? (
+          <p className="mt-2 flex items-center justify-center gap-1 text-center text-[10px] leading-tight text-muted-foreground">
+            <ShieldCheck className="h-3 w-3 shrink-0" />
+            {auction.bidFee.toFixed(2)} {currency} fee per bid · {t('auction.terms')}
+          </p>
+        ) : (
+          <p className="mt-2.5 text-center text-xs text-muted-foreground">
+            {t('bid.feeNotice', { fee: `${auction.bidFee.toFixed(2)} ${currency}` })}
+          </p>
+        )}
 
         {phase === 'awaiting-payment' && (
-          <p className="mt-3 flex items-start gap-2 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2.5 text-xs leading-relaxed">
+          <p className={cn(noteClass, 'border-accent/30 bg-accent/5')}>
             <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
             <span>
               Approve the {auction.bidFee.toFixed(2)} {currency} fee in your wallet. Your bid counts
@@ -241,7 +299,7 @@ export function BidPanel({ auction, connected, bidsUsed }: Props) {
         )}
 
         {phase === 'confirmed' && (
-          <p className="mt-3 flex items-start gap-2 rounded-xl border border-success/30 bg-success/5 px-3 py-2.5 text-xs leading-relaxed">
+          <p className={cn(noteClass, 'border-success/30 bg-success/5')}>
             <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
             <span>
               {t('bid.confirmed')}. {t('bid.hiddenUntilEnd')}
@@ -250,17 +308,19 @@ export function BidPanel({ auction, connected, bidsUsed }: Props) {
         )}
 
         {phase === 'failed' && message && (
-          <p className="mt-3 flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-xs leading-relaxed">
+          <p className={cn(noteClass, 'border-destructive/30 bg-destructive/5')}>
             <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
             <span>{message}</span>
           </p>
         )}
       </div>
 
-      <p className="flex items-center justify-center gap-1.5 border-t border-border bg-secondary/40 py-2.5 text-[11px] text-muted-foreground">
-        <ShieldCheck className="h-3.5 w-3.5" />
-        {t('auction.terms')}
-      </p>
+      {!compact && (
+        <p className="flex items-center justify-center gap-1.5 border-t border-border bg-secondary/40 py-2.5 text-[11px] text-muted-foreground">
+          <ShieldCheck className="h-3.5 w-3.5" />
+          {t('auction.terms')}
+        </p>
+      )}
     </div>
   );
 }

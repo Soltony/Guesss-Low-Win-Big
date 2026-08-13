@@ -2,7 +2,7 @@ import prisma from '@/lib/prisma';
 import { MiniAppShell } from '@/components/miniapp/mini-app-shell';
 import { AuctionsBrowser } from '@/components/miniapp/auctions-browser';
 import { browseAuctions } from '@/lib/miniapp-data';
-import { getFavoriteAuctionIds, getShellUser } from '@/lib/miniapp-user';
+import { getBidCountsByAuction, getFavoriteAuctionIds, getShellUser } from '@/lib/miniapp-user';
 import { getSettings } from '@/lib/settings';
 
 export const dynamic = 'force-dynamic';
@@ -40,7 +40,10 @@ export default async function AuctionsPage({
     take: 48,
   });
 
-  const favorites = await getFavoriteAuctionIds(user?.bidderId);
+  const [favorites, bidCounts] = await Promise.all([
+    getFavoriteAuctionIds(user?.bidderId),
+    getBidCountsByAuction(user?.bidderId),
+  ]);
 
   return (
     <MiniAppShell user={user}>
@@ -52,6 +55,8 @@ export default async function AuctionsPage({
         activeCategory={params.category ?? ''}
         activeStatus={status}
         query={params.q ?? ''}
+        connected={Boolean(user)}
+        bidCounts={bidCounts}
       />
     </MiniAppShell>
   );

@@ -31,6 +31,26 @@ export async function getShellUser(): Promise<ShellUser | null> {
   };
 }
 
+/**
+ * Bids the signed-in bidder already holds, keyed by auction. Lists need this to
+ * show the remaining allowance on the inline bid form without a round trip per
+ * card. Counts what the per-auction limit counts: live bids plus ones still
+ * waiting on payment.
+ */
+export async function getBidCountsByAuction(
+  bidderId: string | undefined
+): Promise<Record<string, number>> {
+  if (!bidderId) return {};
+
+  const rows = await prisma.bid.groupBy({
+    by: ['auctionId'],
+    where: { bidderId, status: { in: ['ACTIVE', 'PENDING_PAYMENT'] } },
+    _count: { _all: true },
+  });
+
+  return Object.fromEntries(rows.map((row) => [row.auctionId, row._count._all]));
+}
+
 export async function getFavoriteAuctionIds(bidderId: string | undefined) {
   if (!bidderId) return new Set<string>();
   const rows = await prisma.bidderFavorite.findMany({

@@ -55,6 +55,8 @@ export function HomeView({
   recentWinners,
   favorites,
   stats,
+  connected = false,
+  bidCounts = {},
 }: {
   tagline: string;
   categories: HomeCategory[];
@@ -63,6 +65,10 @@ export function HomeView({
   recentWinners: RecentWinner[];
   favorites: string[];
   stats: { liveAuctions: number; totalBids: number; totalWinners: number };
+  /** A bidder session exists, so cards can open their inline bid form. */
+  connected?: boolean;
+  /** Bids the signed-in bidder already holds, keyed by auction id. */
+  bidCounts?: Record<string, number>;
 }) {
   const { t, lang } = useLanguage();
   const favoriteSet = new Set(favorites);
@@ -182,6 +188,8 @@ export function HomeView({
                 auction={auction}
                 favorited={favoriteSet.has(auction.id)}
                 index={index}
+                connected={connected}
+                bidsUsed={bidCounts[auction.id] ?? 0}
               />
             ))}
           </div>
@@ -209,6 +217,8 @@ export function HomeView({
                 auction={auction}
                 favorited={favoriteSet.has(auction.id)}
                 index={index}
+                connected={connected}
+                bidsUsed={bidCounts[auction.id] ?? 0}
               />
             ))
           )}

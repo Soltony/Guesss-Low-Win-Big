@@ -30,6 +30,8 @@ export function AuctionsBrowser({
   activeCategory,
   activeStatus,
   query,
+  connected = false,
+  bidCounts = {},
 }: {
   auctions: PublicAuction[];
   total: number;
@@ -38,6 +40,10 @@ export function AuctionsBrowser({
   activeCategory: string;
   activeStatus: string;
   query: string;
+  /** A bidder session exists, so cards can open their inline bid form. */
+  connected?: boolean;
+  /** Bids the signed-in bidder already holds, keyed by auction id. */
+  bidCounts?: Record<string, number>;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -163,6 +169,8 @@ export function AuctionsBrowser({
               auction={auction}
               favorited={favoriteSet.has(auction.id)}
               index={index}
+              connected={connected}
+              bidsUsed={bidCounts[auction.id] ?? 0}
             />
           ))
         )}
