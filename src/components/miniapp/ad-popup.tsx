@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, X } from 'lucide-react';
 import { useLanguage } from './language-provider';
@@ -36,10 +36,15 @@ export function AdPopup() {
   const router = useRouter();
   const { lang, t } = useLanguage();
   const [queue, setQueue] = useState<PopupAd[]>([]);
+  const [servedCount, setServedCount] = useState(0);
   const [visible, setVisible] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const viewed = useRef<Set<string>>(new Set());
 
   const ad = queue[0];
+  // Position in the batch, counted from what was delivered rather than what is
+  // left, so a queue of three reads 1/3 → 2/3 → 3/3.
+  const position = servedCount - queue.length + 1;
 
   useEffect(() => {
     if (window.sessionStorage.getItem(SESSION_KEY)) return;
@@ -55,6 +60,7 @@ export function AdPopup() {
       .then((data) => {
         if (cancelled || !data?.ads?.length) return;
         setQueue(data.ads);
+        setServedCount(data.ads.length);
         timer = setTimeout(() => !cancelled && setVisible(true), (data.delaySeconds || 0) * 1000);
       })
       .catch(() => null);
@@ -69,6 +75,20 @@ export function AdPopup() {
     setQueue((prev) => prev.slice(1));
     setElapsedMs(0);
   }, []);
+
+  // Reports the card that is on screen. This is the impression the frequency cap
+  // is measured from, so it fires per card and only once each — a bidder who
+  // closes the app mid-queue leaves the rest unspent for their next visit.
+  useEffect(() => {
+    if (!visible || !ad || viewed.current.has(ad.id)) return;
+    viewed.current.add(ad.id);
+
+    fetch('/api/miniapp/ads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adId: ad.id, event: 'view' }),
+    }).catch(() => null);
+  }, [visible, ad]);
 
   // One ticker drives both countdowns. It measures against the wall clock so a
   // backgrounded webview cannot stretch a forced view past its real duration.
@@ -130,12 +150,14 @@ export function AdPopup() {
     fetch('/api/miniapp/ads', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adId: ad.id }),
+      body: JSON.stringify({ adId: ad.id, event: 'click' }),
     }).catch(() => null);
 
-    // Tapping through counts as the ad having been seen, so it bypasses the
-    // forced view rather than trapping a bidder who is already engaging.
-    next();
+    // Tapping through ends the whole batch, not just this card: the bidder has
+    // acted on an ad and is being sent somewhere: greeting them with the next
+    // popup on the destination page would bury the thing they just asked for.
+    // It also bypasses the forced view rather than trapping someone engaging.
+    setQueue([]);
     if (ad.linkUrl.startsWith('/')) router.push(ad.linkUrl);
     else window.open(ad.linkUrl, '_blank', 'noopener,noreferrer');
   };
@@ -194,9 +216,9 @@ export function AdPopup() {
             <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
               {t('ads.sponsored')}
             </p>
-            {queue.length > 1 && (
+            {servedCount > 1 && (
               <p className="text-[10px] font-medium tabular-nums text-muted-foreground">
-                1 / {queue.length}
+                {position} / {servedCount}
               </p>
             )}
           </div>

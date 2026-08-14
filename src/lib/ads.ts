@@ -98,10 +98,13 @@ function isDue(
 }
 
 /**
- * Ads due for one bidder, already trimmed to the per-visit cap. Serving them
- * counts as showing them, so the impression is recorded here rather than
- * trusting the client to report back — a closed webview must not hand a bidder
- * the same popup on every visit.
+ * Ads due for one bidder, already trimmed to the per-visit cap.
+ *
+ * Serving is not seeing: with a cap above 1 the batch is a queue the bidder
+ * works through one card at a time, and they may close the app after the first.
+ * Impressions are therefore recorded by `recordAdView` as each card actually
+ * reaches the screen — counting them here would burn the frequency cap of ads
+ * nobody ever laid eyes on.
  */
 export async function popupAdsForBidder(bidder: {
   bidderId: string;
@@ -133,11 +136,6 @@ export async function popupAdsForBidder(bidder: {
   const due = candidates.filter((ad) => isDue(ad.frequency, ad.views[0], now)).slice(0, limit);
   if (due.length === 0) return { ads: [], delaySeconds };
 
-  await recordImpressions(
-    due.map((ad) => ad.id),
-    bidder.bidderId
-  );
-
   return {
     delaySeconds,
     ads: due.map((ad) => ({
@@ -156,24 +154,31 @@ export async function popupAdsForBidder(bidder: {
   };
 }
 
-async function recordImpressions(adIds: string[], bidderId: string) {
-  const now = new Date();
+/**
+ * Records one card actually reaching the screen. This is what the frequency cap
+ * is measured from, so it is also what stops a queued-but-unseen ad from being
+ * spent. Silent when the ad has gone.
+ */
+export async function recordAdView(adId: string, bidderId: string) {
+  const ad = await prisma.advertisement.findUnique({ where: { id: adId }, select: { id: true } });
+  if (!ad) return false;
 
-  for (const adId of adIds) {
-    // `lastSeenAt` is not an @updatedAt column — the frequency cap reads it, so
-    // it is written explicitly on every impression.
-    await prisma.$transaction([
-      prisma.adImpression.upsert({
-        where: { adId_bidderId: { adId, bidderId } },
-        create: { adId, bidderId, seenCount: 1, firstSeenAt: now, lastSeenAt: now },
-        update: { seenCount: { increment: 1 }, lastSeenAt: now },
-      }),
-      prisma.advertisement.update({
-        where: { id: adId },
-        data: { impressions: { increment: 1 } },
-      }),
-    ]);
-  }
+  const now = new Date();
+  // `lastSeenAt` is not an @updatedAt column — the frequency cap reads it, so
+  // it is written explicitly on every impression.
+  await prisma.$transaction([
+    prisma.adImpression.upsert({
+      where: { adId_bidderId: { adId, bidderId } },
+      create: { adId, bidderId, seenCount: 1, firstSeenAt: now, lastSeenAt: now },
+      update: { seenCount: { increment: 1 }, lastSeenAt: now },
+    }),
+    prisma.advertisement.update({
+      where: { id: adId },
+      data: { impressions: { increment: 1 } },
+    }),
+  ]);
+
+  return true;
 }
 
 /** Records a tap on the ad's call to action. Silent when the ad has gone. */
