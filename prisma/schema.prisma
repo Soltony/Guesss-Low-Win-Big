@@ -114,6 +114,10 @@ model Bidder {
   totalSpent   Decimal  @default(0) @db.Decimal(18, 2)
   winsCount    Int      @default(0)
 
+  // Sign-in the ad popup was last served to, so one login gets one batch no
+  // matter how many pages the bidder opens. See src/lib/ads.ts.
+  lastAdSessionId String?
+
   firstSeenAt  DateTime @default(now())
   lastSeenAt   DateTime @default(now())
   createdAt    DateTime @default(now())

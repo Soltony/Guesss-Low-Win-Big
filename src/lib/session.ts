@@ -257,11 +257,17 @@ export interface BidderSessionPayload {
    * cookie so it cannot be forged, and checked wherever real money would move.
    */
   isTest?: boolean;
+  /**
+   * Identifies this sign-in. Anything that should happen once per login rather
+   * than once per page — the ad popup — compares against it server-side, which
+   * a webview's storage quirks cannot influence.
+   */
+  sid?: string;
 }
 
 export async function createBidderSession(payload: BidderSessionPayload) {
   const expires = expiryFromDays(1);
-  const jwt = await encryptJwt({ ...payload }, '1d');
+  const jwt = await encryptJwt({ sid: uuid(), ...payload }, '1d');
   const store = await cookies();
   store.set(MINIAPP_COOKIE, jwt, { ...cookieBase, expires });
   return jwt;

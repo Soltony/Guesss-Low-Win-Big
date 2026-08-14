@@ -13,6 +13,7 @@ export async function GET() {
   const result = await popupAdsForBidder({
     bidderId: session.bidderId,
     isTest: session.isTest,
+    sessionId: session.sid,
   });
 
   return NextResponse.json(result);

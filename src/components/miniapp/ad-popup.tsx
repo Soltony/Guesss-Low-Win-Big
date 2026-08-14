@@ -20,10 +20,6 @@ interface PopupAd {
   minViewSeconds: number;
 }
 
-/** Once per app open — a remount while browsing must not re-serve the popup,
- *  and the fetch itself is what records the impression. */
-const SESSION_KEY = 'guesslow.ads.served';
-
 /**
  * Promotional popup shown once a bidder has a live session. The server decides
  * what is due — scheduling, frequency caps and the master switch all live in
@@ -46,12 +42,11 @@ export function AdPopup() {
   // left, so a queue of three reads 1/3 → 2/3 → 3/3.
   const position = servedCount - queue.length + 1;
 
+  // Asked on every mount. The server serves one batch per sign-in, so the
+  // browsing that follows a login gets a single popup without this component
+  // having to remember anything — webview storage outlives a mini-app open in
+  // ways that silently swallowed the popup on the second visit.
   useEffect(() => {
-    if (window.sessionStorage.getItem(SESSION_KEY)) return;
-    // Claimed before the request goes out: React re-runs effects in dev, and a
-    // second fetch would burn a second impression.
-    window.sessionStorage.setItem(SESSION_KEY, '1');
-
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
 

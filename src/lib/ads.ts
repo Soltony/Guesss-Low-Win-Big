@@ -109,6 +109,8 @@ function isDue(
 export async function popupAdsForBidder(bidder: {
   bidderId: string;
   isTest?: boolean;
+  /** The current sign-in, from the session cookie. One batch per sign-in. */
+  sessionId?: string;
 }): Promise<{ ads: PopupAd[]; delaySeconds: number }> {
   const settings = await getSettings();
   const empty = { ads: [], delaySeconds: 0 };
@@ -136,6 +138,12 @@ export async function popupAdsForBidder(bidder: {
   const due = candidates.filter((ad) => isDue(ad.frequency, ad.views[0], now)).slice(0, limit);
   if (due.length === 0) return { ads: [], delaySeconds };
 
+  // Claimed only once there is something to show, so a quiet visit does not
+  // spend the sign-in's one batch.
+  if (!(await claimSignIn(bidder.bidderId, bidder.sessionId))) {
+    return { ads: [], delaySeconds };
+  }
+
   return {
     delaySeconds,
     ads: due.map((ad) => ({
@@ -152,6 +160,33 @@ export async function popupAdsForBidder(bidder: {
       minViewSeconds: ad.minViewSeconds,
     })),
   };
+}
+
+/**
+ * Marks this sign-in as having been served its popup batch, and reports whether
+ * the caller is the one that claimed it.
+ *
+ * Every mini-app page mounts its own shell, so a bidder browsing three pages
+ * asks three times; without this they would be shown the popup on each. The
+ * conditional UPDATE is what makes it safe — two page loads racing can never
+ * both come back true.
+ *
+ * Sessions issued before `sid` existed all share the `legacy` marker: they get
+ * one batch and nothing more until the cookie is reissued, which errs toward
+ * showing too few popups rather than too many.
+ */
+async function claimSignIn(bidderId: string, sessionId?: string) {
+  const marker = sessionId || 'legacy';
+
+  const claimed = await prisma.bidder.updateMany({
+    where: {
+      id: bidderId,
+      OR: [{ lastAdSessionId: null }, { lastAdSessionId: { not: marker } }],
+    },
+    data: { lastAdSessionId: marker },
+  });
+
+  return claimed.count === 1;
 }
 
 /**
