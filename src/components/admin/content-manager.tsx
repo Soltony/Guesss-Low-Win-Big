@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
+  AlertTriangle,
   Images,
   Loader2,
   Megaphone,
@@ -146,6 +147,14 @@ export function ContentManager({
   const { toast } = useToast();
   const [bannerForm, setBannerForm] = useState<BannerRow | null>(null);
   const [adForm, setAdForm] = useState<AdRow | null>(null);
+  // Mirrors the server's servable test: active, and inside its run window.
+  const now = Date.now();
+  const liveAds = ads.filter(
+    (ad) =>
+      ad.status === 'ACTIVE' &&
+      (!ad.startAt || new Date(ad.startAt).getTime() <= now) &&
+      (!ad.endAt || new Date(ad.endAt).getTime() >= now)
+  );
   const [termsForm, setTermsForm] = useState<typeof blankTerms | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -395,6 +404,34 @@ export function ContentManager({
               )}
             </p>
           </div>
+
+          {/* The commonest surprise: several ads live, but the per-visit cap
+              only ever hands over the first. Say so before it is reported. */}
+          {adsEnabled && liveAds.length > adsPerLogin && (
+            <div className="mb-4 flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+              <p>
+                <strong>{liveAds.length} ads are live</strong>, but only{' '}
+                <strong>{adsPerLogin}</strong> {adsPerLogin === 1 ? 'is' : 'are'} served per visit,
+                so bidders see{' '}
+                {adsPerLogin === 1 ? 'the first one only' : `the first ${adsPerLogin}`}. Raise{' '}
+                <Link href="/admin/settings" className="underline">
+                  Ads per app open
+                </Link>{' '}
+                to queue them in one visit.
+              </p>
+            </div>
+          )}
+
+          {adsEnabled && liveAds.length === 0 && ads.length > 0 && (
+            <div className="mb-4 flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+              <p>
+                No ad is being served right now — every one below is either inactive or outside its
+                run window. Clear the dates on an ad to run it until you switch it off.
+              </p>
+            </div>
+          )}
 
           <TableCard>
             <table className="w-full min-w-[860px] text-sm">

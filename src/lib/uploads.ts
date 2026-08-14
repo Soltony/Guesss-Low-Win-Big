@@ -54,8 +54,10 @@ export function resolveUploadPath(filename: string): string | null {
   const directory = uploadsDir();
   const resolved = path.resolve(directory, filename);
 
-  // Defence in depth: the regex already excludes separators.
-  if (path.dirname(resolved) !== path.resolve(directory)) return null;
+  // Defence in depth: the regex already excludes separators. `uploadsDir()`
+  // always returns an absolute, normalised path, so it is compared as-is —
+  // re-resolving it makes Turbopack trace the whole project into the output.
+  if (path.dirname(resolved) !== directory) return null;
 
   return resolved;
 }

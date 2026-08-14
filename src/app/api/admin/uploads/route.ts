@@ -84,7 +84,11 @@ export async function POST(req: NextRequest) {
 
   try {
     await mkdir(directory, { recursive: true });
-    await writeFile(path.join(directory, filename), bytes);
+    // The directory is chosen at runtime (`UPLOAD_DIR`), so Turbopack cannot
+    // statically scope this join and would trace the whole project — including
+    // `public/` — into the server output. Nothing here is bundled: the path is
+    // only ever written to at request time.
+    await writeFile(path.join(/*turbopackIgnore: true*/ directory, filename), bytes);
   } catch (error) {
     console.error('[uploads] write failed', error);
     return jsonError('Could not save the image on the server.', 500);
