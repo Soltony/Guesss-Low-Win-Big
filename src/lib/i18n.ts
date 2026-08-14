@@ -80,6 +80,10 @@ const dictionary = {
   'wins.claimed': { en: 'Claim submitted', am: 'ጥያቄ ቀርቧል' },
   'wins.claimDeadline': { en: 'Claim before', am: 'ከዚህ በፊት ይጠይቁ' },
 
+  'ads.sponsored': { en: 'Sponsored', am: 'የተደገፈ' },
+  'ads.next': { en: 'Next', am: 'ቀጣይ' },
+  'ads.dismiss': { en: 'Not now', am: 'አሁን አይደለም' },
+
   'common.loading': { en: 'Loading…', am: 'በመጫን ላይ…' },
   'common.retry': { en: 'Try again', am: 'እንደገና ይሞክሩ' },
   'common.cancel': { en: 'Cancel', am: 'ሰርዝ' },

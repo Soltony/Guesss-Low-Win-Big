@@ -5,6 +5,7 @@ import { Gavel, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LANGUAGES } from '@/lib/i18n';
 import { LanguageProvider, useLanguage } from './language-provider';
+import { AdPopup } from './ad-popup';
 import { Logo } from '@/components/icons';
 import type { Language } from '@/lib/types';
 
@@ -106,6 +107,9 @@ export function MiniAppShell({
         >
           {children}
         </main>
+        {/* Only a connected bidder can be served an ad — the endpoint needs the
+            session, and impressions are tracked per bidder. */}
+        {user && <AdPopup />}
       </div>
     </LanguageProvider>
   );

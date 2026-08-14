@@ -32,6 +32,7 @@ export const SETTING_CATEGORIES = [
   'winners',
   'reauction',
   'payments',
+  'ads',
   'notifications',
   'security',
 ] as const;
@@ -44,6 +45,7 @@ export const CATEGORY_LABELS: Record<SettingCategory, string> = {
   winners: 'Winners & Claims',
   reauction: 'Re-Auction',
   payments: 'Payments',
+  ads: 'Ads & Popups',
   notifications: 'Notifications',
   security: 'Security & Governance',
 };
@@ -469,6 +471,50 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     description:
       'If a payment succeeds after its bid was voided, mark the transaction for refund instead of silently keeping it.',
     category: 'payments',
+    type: 'boolean',
+    default: true,
+  },
+
+  // ---- Ads & popups ----
+  {
+    key: 'ads.enabled',
+    label: 'Show ad popups',
+    description:
+      'Master switch for the promotional popup shown in the mini-app after a bidder connects. When off, no ad is served whatever is scheduled under Content → Ads.',
+    category: 'ads',
+    type: 'boolean',
+    default: true,
+  },
+  {
+    key: 'ads.maxPerLogin',
+    label: 'Ads per app open',
+    description:
+      'How many popups a bidder may be shown in one visit. Extra scheduled ads wait for the next visit.',
+    category: 'ads',
+    type: 'number',
+    default: 1,
+    min: 1,
+    max: 5,
+    step: 1,
+  },
+  {
+    key: 'ads.delaySeconds',
+    label: 'Delay before the popup (seconds)',
+    description:
+      'Pause after the app opens before the popup appears, so the home page paints first. 0 shows it immediately.',
+    category: 'ads',
+    type: 'number',
+    default: 2,
+    min: 0,
+    max: 30,
+    step: 1,
+  },
+  {
+    key: 'ads.showToTestSessions',
+    label: 'Show ads in test sessions',
+    description:
+      'Whether sessions created through the authorization bypass also see popups. Keep on while previewing an ad before launch.',
+    category: 'ads',
     type: 'boolean',
     default: true,
   },

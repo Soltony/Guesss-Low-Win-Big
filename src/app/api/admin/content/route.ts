@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { isGuardFailure, jsonError, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
+import { isAdFrequency, parseAdSchedule } from '@/lib/ads';
 
 export const dynamic = 'force-dynamic';
 
-/** Home-page banners and the terms &amp; conditions library live under Content. */
+/** Home-page banners, ad popups and the terms &amp; conditions library live under Content. */
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const kind = String(body?.kind || '');
@@ -44,6 +45,57 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ id: banner.id }, { status: 201 });
+  }
+
+  if (kind === 'ad') {
+    const guard = await requirePermission('content', 'create');
+    if (isGuardFailure(guard)) return guard.response;
+    const { user } = guard;
+
+    const title = String(body.title || '').trim();
+    if (!title) return jsonError('Ad title is required.', 400);
+
+    const imageUrl = String(body.imageUrl || '').trim();
+    const bodyText = String(body.body || '').trim();
+    if (!imageUrl && !bodyText) {
+      return jsonError('An ad needs an image, a message, or both.', 400);
+    }
+
+    const schedule = parseAdSchedule(body);
+    if ('error' in schedule) return jsonError(schedule.error, 400);
+
+    const frequency = isAdFrequency(body.frequency) ? body.frequency : 'ONCE_PER_DAY';
+
+    const ad = await prisma.advertisement.create({
+      data: {
+        title,
+        titleAm: body.titleAm ? String(body.titleAm) : undefined,
+        body: bodyText || undefined,
+        bodyAm: body.bodyAm ? String(body.bodyAm) : undefined,
+        imageUrl: imageUrl || undefined,
+        ctaLabel: body.ctaLabel ? String(body.ctaLabel) : undefined,
+        ctaLabelAm: body.ctaLabelAm ? String(body.ctaLabelAm) : undefined,
+        linkUrl: body.linkUrl ? String(body.linkUrl).trim() : undefined,
+        placement: 'POST_LOGIN',
+        frequency,
+        status: body.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
+        displayOrder: Math.trunc(Number(body.displayOrder) || 0),
+        autoCloseSeconds: Math.min(120, Math.max(0, Math.trunc(Number(body.autoCloseSeconds) || 0))),
+        startAt: schedule.startAt ?? undefined,
+        endAt: schedule.endAt ?? undefined,
+      },
+    });
+
+    await createAuditLog({
+      actorId: user.id,
+      actorName: user.fullName,
+      action: 'AD_CREATED',
+      entity: 'Advertisement',
+      entityId: ad.id,
+      details: { title, frequency, status: ad.status },
+    });
+
+    return NextResponse.json({ id: ad.id }, { status: 201 });
   }
 
   if (kind === 'terms') {

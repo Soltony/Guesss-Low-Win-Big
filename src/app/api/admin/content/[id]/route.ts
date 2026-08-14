@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { isGuardFailure, jsonError, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
+import { isAdFrequency, parseAdSchedule } from '@/lib/ads';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,6 +53,72 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       entity: 'Banner',
       entityId: id,
       details: { changed: Object.keys(data) },
+    });
+
+    return NextResponse.json({ ok: true });
+  }
+
+  if (kind === 'ad') {
+    const ad = await prisma.advertisement.findUnique({ where: { id } });
+    if (!ad) return jsonError('Ad not found', 404);
+
+    const data: Record<string, unknown> = {};
+    if (body.title !== undefined) {
+      const title = String(body.title).trim();
+      if (!title) return jsonError('Ad title cannot be empty.', 400);
+      data.title = title;
+    }
+    if (body.titleAm !== undefined) data.titleAm = String(body.titleAm) || null;
+    if (body.body !== undefined) data.body = String(body.body).trim() || null;
+    if (body.bodyAm !== undefined) data.bodyAm = String(body.bodyAm) || null;
+    if (body.imageUrl !== undefined) data.imageUrl = String(body.imageUrl).trim() || null;
+    if (body.ctaLabel !== undefined) data.ctaLabel = String(body.ctaLabel) || null;
+    if (body.ctaLabelAm !== undefined) data.ctaLabelAm = String(body.ctaLabelAm) || null;
+    if (body.linkUrl !== undefined) data.linkUrl = String(body.linkUrl).trim() || null;
+    if (body.frequency !== undefined) {
+      if (!isAdFrequency(body.frequency)) return jsonError('Unsupported ad frequency.', 400);
+      data.frequency = body.frequency;
+    }
+    if (body.status !== undefined) {
+      data.status = body.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    }
+    if (body.displayOrder !== undefined) {
+      data.displayOrder = Math.trunc(Number(body.displayOrder) || 0);
+    }
+    if (body.autoCloseSeconds !== undefined) {
+      data.autoCloseSeconds = Math.min(
+        120,
+        Math.max(0, Math.trunc(Number(body.autoCloseSeconds) || 0))
+      );
+    }
+    if (body.startAt !== undefined || body.endAt !== undefined) {
+      const schedule = parseAdSchedule({
+        startAt: body.startAt !== undefined ? body.startAt : ad.startAt,
+        endAt: body.endAt !== undefined ? body.endAt : ad.endAt,
+      });
+      if ('error' in schedule) return jsonError(schedule.error, 400);
+      if (body.startAt !== undefined) data.startAt = schedule.startAt;
+      if (body.endAt !== undefined) data.endAt = schedule.endAt;
+    }
+
+    // The ad still has to carry something a bidder can see once the edit lands.
+    const nextImage = data.imageUrl !== undefined ? data.imageUrl : ad.imageUrl;
+    const nextBody = data.body !== undefined ? data.body : ad.body;
+    if (!nextImage && !nextBody) {
+      return jsonError('An ad needs an image, a message, or both.', 400);
+    }
+
+    if (Object.keys(data).length === 0) return jsonError('Nothing to update.', 400);
+
+    await prisma.advertisement.update({ where: { id }, data });
+
+    await createAuditLog({
+      actorId: user.id,
+      actorName: user.fullName,
+      action: 'AD_UPDATED',
+      entity: 'Advertisement',
+      entityId: id,
+      details: { title: ad.title, changed: Object.keys(data) },
     });
 
     return NextResponse.json({ ok: true });
@@ -128,6 +195,24 @@ export async function DELETE(
       entity: 'Banner',
       entityId: id,
       details: { title: banner.title },
+    });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (kind === 'ad') {
+    const ad = await prisma.advertisement.findUnique({ where: { id } });
+    if (!ad) return jsonError('Ad not found', 404);
+
+    // Impressions cascade with the ad — they are per-bidder frequency state,
+    // not a record anyone reports on once the ad is gone.
+    await prisma.advertisement.delete({ where: { id } });
+    await createAuditLog({
+      actorId: user.id,
+      actorName: user.fullName,
+      action: 'AD_DELETED',
+      entity: 'Advertisement',
+      entityId: id,
+      details: { title: ad.title, impressions: ad.impressions, clicks: ad.clicks },
     });
     return NextResponse.json({ ok: true });
   }

@@ -1,0 +1,34 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getBidderSession } from '@/lib/session';
+import { jsonError } from '@/lib/api';
+import { popupAdsForBidder, recordAdClick } from '@/lib/ads';
+
+export const dynamic = 'force-dynamic';
+
+/** Popups the signed-in bidder is due to see on this visit. */
+export async function GET() {
+  const session = await getBidderSession();
+  if (!session) return jsonError('Not authenticated', 401);
+
+  const result = await popupAdsForBidder({
+    bidderId: session.bidderId,
+    isTest: session.isTest,
+  });
+
+  return NextResponse.json(result);
+}
+
+/** Records a tap on an ad's call to action. */
+export async function POST(req: NextRequest) {
+  const session = await getBidderSession();
+  if (!session) return jsonError('Not authenticated', 401);
+
+  const body = await req.json().catch(() => ({}));
+  const adId = String(body?.adId || '').trim();
+  if (!adId) return jsonError('Ad id is required.', 400);
+
+  const recorded = await recordAdClick(adId, session.bidderId);
+  if (!recorded) return jsonError('Ad not found', 404);
+
+  return NextResponse.json({ ok: true });
+}

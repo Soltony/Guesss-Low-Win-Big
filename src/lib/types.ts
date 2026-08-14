@@ -61,6 +61,24 @@ export interface SettlementActor {
   name?: string;
 }
 
+// --------------------------------------
+// ADVERTISEMENTS
+// --------------------------------------
+
+/** Where an ad is surfaced in the mini-app. */
+export const AD_PLACEMENTS = ['POST_LOGIN'] as const;
+export type AdPlacement = (typeof AD_PLACEMENTS)[number];
+
+/** How often one bidder may be shown the same ad. */
+export const AD_FREQUENCIES = ['EVERY_LOGIN', 'ONCE_PER_DAY', 'ONCE'] as const;
+export type AdFrequency = (typeof AD_FREQUENCIES)[number];
+
+export const AD_FREQUENCY_LABELS: Record<AdFrequency, string> = {
+  EVERY_LOGIN: 'Every time the app is opened',
+  ONCE_PER_DAY: 'Once every 24 hours',
+  ONCE: 'Once ever',
+};
+
 export const PENDING_CHANGE_STATUSES = [
   'PENDING',
   'APPROVED',
