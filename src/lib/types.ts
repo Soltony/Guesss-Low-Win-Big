@@ -73,6 +73,10 @@ export type AdPlacement = (typeof AD_PLACEMENTS)[number];
 export const AD_FREQUENCIES = ['EVERY_LOGIN', 'ONCE_PER_DAY', 'ONCE'] as const;
 export type AdFrequency = (typeof AD_FREQUENCIES)[number];
 
+/** Upper bound on a forced view, so a typo cannot trap a bidder in the popup. */
+export const MAX_MIN_VIEW_SECONDS = 30;
+export const MAX_AUTO_CLOSE_SECONDS = 120;
+
 export const AD_FREQUENCY_LABELS: Record<AdFrequency, string> = {
   EVERY_LOGIN: 'Every time the app is opened',
   ONCE_PER_DAY: 'Once every 24 hours',

@@ -30,7 +30,12 @@ import { EmptyRow, TableCard } from '@/components/admin/data-shell';
 import { ImageUploader } from '@/components/admin/image-uploader';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { AD_FREQUENCIES, AD_FREQUENCY_LABELS, type AdFrequency } from '@/lib/types';
+import {
+  AD_FREQUENCIES,
+  AD_FREQUENCY_LABELS,
+  MAX_MIN_VIEW_SECONDS,
+  type AdFrequency,
+} from '@/lib/types';
 
 export interface BannerRow {
   id: string;
@@ -57,6 +62,7 @@ export interface AdRow {
   status: string;
   displayOrder: number;
   autoCloseSeconds: number;
+  minViewSeconds: number;
   /** `datetime-local` value, or '' when the ad runs open-ended. */
   startAt: string;
   endAt: string;
@@ -100,6 +106,7 @@ const blankAd: AdRow = {
   status: 'ACTIVE',
   displayOrder: 0,
   autoCloseSeconds: 0,
+  minViewSeconds: 0,
   startAt: '',
   endAt: '',
   impressions: 0,
@@ -437,6 +444,11 @@ export function ContentManager({
                     </td>
                     <td className="px-4 py-2.5 text-xs text-muted-foreground">
                       {AD_FREQUENCY_LABELS[ad.frequency as AdFrequency] ?? ad.frequency}
+                      {ad.minViewSeconds > 0 && (
+                        <Badge variant="secondary" className="ml-1.5 px-1.5 py-0 text-[10px]">
+                          {ad.minViewSeconds}s forced
+                        </Badge>
+                      )}
                     </td>
                     <td className="px-4 py-2.5 text-xs text-muted-foreground">
                       {ad.startAt || ad.endAt
@@ -815,17 +827,23 @@ export function ContentManager({
                 Leave both blank to run the ad until you switch it off.
               </p>
 
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="a-order">Display order</Label>
+                  <Label htmlFor="a-minview">Forced view (seconds)</Label>
                   <Input
-                    id="a-order"
+                    id="a-minview"
                     type="number"
-                    value={adForm.displayOrder}
+                    min={0}
+                    max={MAX_MIN_VIEW_SECONDS}
+                    value={adForm.minViewSeconds}
                     onChange={(event) =>
-                      setAdForm({ ...adForm, displayOrder: Number(event.target.value) })
+                      setAdForm({ ...adForm, minViewSeconds: Number(event.target.value) })
                     }
                   />
+                  <p className="text-xs text-muted-foreground">
+                    The close button counts down and stays locked this long. 0 lets the bidder
+                    dismiss it at once; {MAX_MIN_VIEW_SECONDS}s is the maximum.
+                  </p>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="a-autoclose">Auto-close after (seconds)</Label>
@@ -837,6 +855,21 @@ export function ContentManager({
                     value={adForm.autoCloseSeconds}
                     onChange={(event) =>
                       setAdForm({ ...adForm, autoCloseSeconds: Number(event.target.value) })
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Dismisses itself after this long. 0 leaves it up until the bidder closes it, and
+                    it can never be shorter than the forced view.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="a-order">Display order</Label>
+                  <Input
+                    id="a-order"
+                    type="number"
+                    value={adForm.displayOrder}
+                    onChange={(event) =>
+                      setAdForm({ ...adForm, displayOrder: Number(event.target.value) })
                     }
                   />
                 </div>
@@ -853,9 +886,6 @@ export function ContentManager({
                   </select>
                 </div>
               </div>
-              <p className="-mt-1 text-xs text-muted-foreground">
-                0 seconds keeps the popup up until the bidder closes it.
-              </p>
 
               {adForm.id && (
                 <p className="text-xs text-muted-foreground">

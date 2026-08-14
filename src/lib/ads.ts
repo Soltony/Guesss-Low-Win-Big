@@ -1,6 +1,11 @@
 import prisma from './prisma';
 import { getSettings } from './settings';
-import { AD_FREQUENCIES, AD_PLACEMENTS } from './types';
+import {
+  AD_FREQUENCIES,
+  AD_PLACEMENTS,
+  MAX_AUTO_CLOSE_SECONDS,
+  MAX_MIN_VIEW_SECONDS,
+} from './types';
 import type { AdFrequency, AdPlacement } from './types';
 
 /**
@@ -26,6 +31,7 @@ export interface PopupAd {
   ctaLabelAm: string | null;
   linkUrl: string | null;
   autoCloseSeconds: number;
+  minViewSeconds: number;
 }
 
 export function isAdFrequency(value: unknown): value is AdFrequency {
@@ -52,6 +58,31 @@ export function parseAdSchedule(
     return { error: 'The end date must be after the start date.' };
   }
   return { startAt, endAt };
+}
+
+/**
+ * Clamps the two countdowns and rejects the one combination that would strand
+ * a bidder: an ad that closes itself before its forced view has elapsed.
+ */
+export function parseAdTimings(
+  minViewInput: unknown,
+  autoCloseInput: unknown
+): { minViewSeconds: number; autoCloseSeconds: number } | { error: string } {
+  const minViewSeconds = Math.min(
+    MAX_MIN_VIEW_SECONDS,
+    Math.max(0, Math.trunc(Number(minViewInput) || 0))
+  );
+  const autoCloseSeconds = Math.min(
+    MAX_AUTO_CLOSE_SECONDS,
+    Math.max(0, Math.trunc(Number(autoCloseInput) || 0))
+  );
+
+  if (autoCloseSeconds > 0 && autoCloseSeconds < minViewSeconds) {
+    return {
+      error: `Auto-close must be at least as long as the forced view (${minViewSeconds}s), or 0 to leave the popup up.`,
+    };
+  }
+  return { minViewSeconds, autoCloseSeconds };
 }
 
 /** True when this bidder is allowed to see the ad again right now. */
@@ -120,6 +151,7 @@ export async function popupAdsForBidder(bidder: {
       ctaLabelAm: ad.ctaLabelAm,
       linkUrl: ad.linkUrl,
       autoCloseSeconds: ad.autoCloseSeconds,
+      minViewSeconds: ad.minViewSeconds,
     })),
   };
 }

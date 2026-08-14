@@ -57,6 +57,7 @@ export default async function ContentPage() {
           status: ad.status,
           displayOrder: ad.displayOrder,
           autoCloseSeconds: ad.autoCloseSeconds,
+          minViewSeconds: ad.minViewSeconds,
           startAt: toLocalInput(ad.startAt),
           endAt: toLocalInput(ad.endAt),
           impressions: ad.impressions,

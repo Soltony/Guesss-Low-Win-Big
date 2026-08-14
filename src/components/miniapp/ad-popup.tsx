@@ -16,6 +16,8 @@ interface PopupAd {
   ctaLabelAm: string | null;
   linkUrl: string | null;
   autoCloseSeconds: number;
+  /** The ad has to stay on screen this long before it can be dismissed. */
+  minViewSeconds: number;
 }
 
 /** Once per app open — a remount while browsing must not re-serve the popup,
@@ -26,13 +28,16 @@ const SESSION_KEY = 'guesslow.ads.served';
  * Promotional popup shown once a bidder has a live session. The server decides
  * what is due — scheduling, frequency caps and the master switch all live in
  * `lib/ads.ts` — so this component only queues and renders what it is handed.
+ *
+ * Dismissal is deliberately the single X: an ad with `minViewSeconds` holds it
+ * locked, counting down, so the close is the only thing a bidder has to find.
  */
 export function AdPopup() {
   const router = useRouter();
   const { lang, t } = useLanguage();
   const [queue, setQueue] = useState<PopupAd[]>([]);
   const [visible, setVisible] = useState(false);
-  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
 
   const ad = queue[0];
 
@@ -62,35 +67,44 @@ export function AdPopup() {
 
   const next = useCallback(() => {
     setQueue((prev) => prev.slice(1));
-    setSecondsLeft(null);
+    setElapsedMs(0);
   }, []);
 
-  // Auto-dismiss, when the ad asks for it.
+  // One ticker drives both countdowns. It measures against the wall clock so a
+  // backgrounded webview cannot stretch a forced view past its real duration.
+  useEffect(() => {
+    if (!visible || !ad) return;
+
+    const startedAt = Date.now();
+    setElapsedMs(0);
+    const interval = setInterval(() => setElapsedMs(Date.now() - startedAt), 200);
+    return () => clearInterval(interval);
+  }, [visible, ad?.id]);
+
+  const lockMs = (ad?.minViewSeconds ?? 0) * 1000;
+  const lockRemainingMs = Math.max(0, lockMs - elapsedMs);
+  const locked = lockRemainingMs > 0;
+  const lockSecondsLeft = Math.ceil(lockRemainingMs / 1000);
+  const lockProgress = lockMs > 0 ? Math.min(100, (elapsedMs / lockMs) * 100) : 100;
+
+  const close = useCallback(() => {
+    if (lockRemainingMs > 0) return;
+    next();
+  }, [lockRemainingMs, next]);
+
+  // Auto-dismiss. Never fires before the forced view — the API rejects that
+  // combination — so the two countdowns cannot contradict each other.
   useEffect(() => {
     if (!visible || !ad?.autoCloseSeconds) return;
+    if (elapsedMs >= ad.autoCloseSeconds * 1000) next();
+  }, [elapsedMs, visible, ad, next]);
 
-    setSecondsLeft(ad.autoCloseSeconds);
-    const interval = setInterval(() => {
-      setSecondsLeft((value) => {
-        if (value === null) return null;
-        if (value <= 1) {
-          clearInterval(interval);
-          next();
-          return null;
-        }
-        return value - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [visible, ad?.id, ad?.autoCloseSeconds, next]);
-
-  // Escape closes, and the page behind must not scroll while the popup is up.
+  // Escape closes once unlocked, and the page behind must not scroll.
   useEffect(() => {
     if (!visible || !ad) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') next();
+      if (event.key === 'Escape') close();
     };
     document.addEventListener('keydown', onKeyDown);
 
@@ -101,7 +115,7 @@ export function AdPopup() {
       document.removeEventListener('keydown', onKeyDown);
       document.body.style.overflow = previousOverflow;
     };
-  }, [visible, ad, next]);
+  }, [visible, ad, close]);
 
   if (!visible || !ad) return null;
 
@@ -119,6 +133,8 @@ export function AdPopup() {
       body: JSON.stringify({ adId: ad.id }),
     }).catch(() => null);
 
+    // Tapping through counts as the ad having been seen, so it bypasses the
+    // forced view rather than trapping a bidder who is already engaging.
     next();
     if (ad.linkUrl.startsWith('/')) router.push(ad.linkUrl);
     else window.open(ad.linkUrl, '_blank', 'noopener,noreferrer');
@@ -130,55 +146,76 @@ export function AdPopup() {
       role="dialog"
       aria-modal="true"
       aria-labelledby="gl-ad-title"
-      onClick={next}
+      onClick={close}
     >
       <div
         className="gl-card relative w-full max-w-sm overflow-hidden"
         onClick={(event) => event.stopPropagation()}
       >
+        {/* Forced view: a hairline of progress so the wait reads as finite. */}
+        {locked && (
+          <div className="absolute inset-x-0 top-0 z-10 h-1 bg-black/10">
+            <div
+              className="h-full bg-primary transition-[width] duration-200 ease-linear"
+              style={{ width: `${lockProgress}%` }}
+            />
+          </div>
+        )}
+
         <button
           type="button"
-          onClick={next}
-          aria-label={t('common.close')}
-          className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70"
+          onClick={close}
+          disabled={locked}
+          aria-label={
+            locked ? `${t('ads.closesIn')} ${lockSecondsLeft}s` : t('common.close')
+          }
+          className={`absolute right-2 top-2 z-10 flex h-8 min-w-8 items-center justify-center rounded-full px-2 text-white transition-colors ${
+            locked ? 'cursor-not-allowed bg-black/40' : 'bg-black/50 hover:bg-black/70'
+          }`}
         >
-          <X className="h-4 w-4" />
+          {locked ? (
+            <span className="text-xs font-bold tabular-nums">{lockSecondsLeft}</span>
+          ) : (
+            <X className="h-4 w-4" />
+          )}
         </button>
 
         {ad.imageUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={ad.imageUrl} alt="" className="max-h-64 w-full object-cover" />
+          // Artwork is supplied at whatever aspect the advertiser has; contain
+          // keeps logos and text inside the frame instead of cropping them.
+          <div className="flex items-center justify-center bg-white p-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={ad.imageUrl} alt="" className="max-h-56 w-full object-contain" />
+          </div>
         )}
 
-        <div className="space-y-2 p-5">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            {t('ads.sponsored')}
-          </p>
-          <h2 id="gl-ad-title" className="text-lg font-bold leading-tight">
+        <div className="p-5">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {t('ads.sponsored')}
+            </p>
+            {queue.length > 1 && (
+              <p className="text-[10px] font-medium tabular-nums text-muted-foreground">
+                1 / {queue.length}
+              </p>
+            )}
+          </div>
+
+          <h2 id="gl-ad-title" className="mt-1.5 text-lg font-bold leading-tight">
             {title}
           </h2>
-          {body && <p className="text-sm leading-relaxed text-muted-foreground">{body}</p>}
+          {body && <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{body}</p>}
 
-          <div className="flex flex-col gap-2 pt-2">
-            {ad.linkUrl && (
-              <button
-                type="button"
-                onClick={openLink}
-                className="gl-gold flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-bold"
-              >
-                {ctaLabel}
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            )}
+          {ad.linkUrl && (
             <button
               type="button"
-              onClick={next}
-              className="rounded-xl px-5 py-2.5 text-sm font-semibold text-muted-foreground transition-colors hover:bg-secondary"
+              onClick={openLink}
+              className="gl-gold mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-bold"
             >
-              {queue.length > 1 ? t('ads.next') : t('ads.dismiss')}
-              {secondsLeft !== null && <span className="ml-1 tabular-nums">({secondsLeft})</span>}
+              {ctaLabel}
+              <ArrowRight className="h-4 w-4" />
             </button>
-          </div>
+          )}
         </div>
       </div>
     </div>

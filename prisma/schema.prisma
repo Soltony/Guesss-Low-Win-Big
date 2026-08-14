@@ -536,6 +536,9 @@ model Advertisement {
   endAt        DateTime?
   // Seconds before the popup dismisses itself; 0 waits for the bidder.
   autoCloseSeconds Int @default(0)
+  // Seconds the ad must stay on screen before the close button unlocks.
+  // 0 lets the bidder dismiss it straight away.
+  minViewSeconds Int @default(0)
 
   // Denormalised totals so the admin list needs no aggregate per row.
   impressions Int @default(0)

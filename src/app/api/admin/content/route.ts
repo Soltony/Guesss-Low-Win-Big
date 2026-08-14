@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { isGuardFailure, jsonError, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
-import { isAdFrequency, parseAdSchedule } from '@/lib/ads';
+import { isAdFrequency, parseAdSchedule, parseAdTimings } from '@/lib/ads';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,6 +64,9 @@ export async function POST(req: NextRequest) {
     const schedule = parseAdSchedule(body);
     if ('error' in schedule) return jsonError(schedule.error, 400);
 
+    const timings = parseAdTimings(body.minViewSeconds, body.autoCloseSeconds);
+    if ('error' in timings) return jsonError(timings.error, 400);
+
     const frequency = isAdFrequency(body.frequency) ? body.frequency : 'ONCE_PER_DAY';
 
     const ad = await prisma.advertisement.create({
@@ -80,7 +83,8 @@ export async function POST(req: NextRequest) {
         frequency,
         status: body.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
         displayOrder: Math.trunc(Number(body.displayOrder) || 0),
-        autoCloseSeconds: Math.min(120, Math.max(0, Math.trunc(Number(body.autoCloseSeconds) || 0))),
+        autoCloseSeconds: timings.autoCloseSeconds,
+        minViewSeconds: timings.minViewSeconds,
         startAt: schedule.startAt ?? undefined,
         endAt: schedule.endAt ?? undefined,
       },

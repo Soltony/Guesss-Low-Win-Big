@@ -81,8 +81,7 @@ const dictionary = {
   'wins.claimDeadline': { en: 'Claim before', am: 'ከዚህ በፊት ይጠይቁ' },
 
   'ads.sponsored': { en: 'Sponsored', am: 'የተደገፈ' },
-  'ads.next': { en: 'Next', am: 'ቀጣይ' },
-  'ads.dismiss': { en: 'Not now', am: 'አሁን አይደለም' },
+  'ads.closesIn': { en: 'You can close this in', am: 'ይህን መዝጋት የሚችሉት በ' },
 
   'common.loading': { en: 'Loading…', am: 'በመጫን ላይ…' },
   'common.retry': { en: 'Try again', am: 'እንደገና ይሞክሩ' },

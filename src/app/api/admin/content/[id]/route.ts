@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { isGuardFailure, jsonError, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
-import { isAdFrequency, parseAdSchedule } from '@/lib/ads';
+import { isAdFrequency, parseAdSchedule, parseAdTimings } from '@/lib/ads';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,11 +85,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.displayOrder !== undefined) {
       data.displayOrder = Math.trunc(Number(body.displayOrder) || 0);
     }
-    if (body.autoCloseSeconds !== undefined) {
-      data.autoCloseSeconds = Math.min(
-        120,
-        Math.max(0, Math.trunc(Number(body.autoCloseSeconds) || 0))
+    // The two countdowns are validated against each other, so an edit that
+    // touches either one is checked against the stored value of the other.
+    if (body.autoCloseSeconds !== undefined || body.minViewSeconds !== undefined) {
+      const timings = parseAdTimings(
+        body.minViewSeconds !== undefined ? body.minViewSeconds : ad.minViewSeconds,
+        body.autoCloseSeconds !== undefined ? body.autoCloseSeconds : ad.autoCloseSeconds
       );
+      if ('error' in timings) return jsonError(timings.error, 400);
+      if (body.autoCloseSeconds !== undefined) data.autoCloseSeconds = timings.autoCloseSeconds;
+      if (body.minViewSeconds !== undefined) data.minViewSeconds = timings.minViewSeconds;
     }
     if (body.startAt !== undefined || body.endAt !== undefined) {
       const schedule = parseAdSchedule({
