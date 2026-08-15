@@ -42,6 +42,7 @@ model User {
   resolvedPayments   PaymentTransaction[] @relation("PaymentResolvedBy")
   updatedSettings    SystemSetting[]      @relation("SettingUpdatedBy")
   moderatedBidders   Bidder[]             @relation("BidderModeratedBy")
+  addedParticipants  AuctionParticipant[] @relation("ParticipantAddedBy")
 
   @@index([roleId])
 }
@@ -226,6 +227,11 @@ model Auction {
 
   status String @default("DRAFT") // DRAFT | PENDING_APPROVAL | SCHEDULED | LIVE | ENDED | SETTLED | CANCELLED
 
+  // Who may take part at all. OPEN admits any bidder; RESTRICTED admits only
+  // the phone numbers on this auction's participant list, whoever else finds
+  // the page. See src/lib/eligibility.ts.
+  eligibilityMode String @default("OPEN") // OPEN | RESTRICTED
+
   featured     Boolean @default(false)
   displayOrder Int     @default(0)
   viewCount    Int     @default(0)
@@ -272,12 +278,13 @@ model Auction {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  bids      Bid[]
-  results   AuctionResult[]
-  winner    Winner?
-  payments  PaymentTransaction[]
-  favorites BidderFavorite[]
-  credits   BidCredit[]
+  bids         Bid[]
+  results      AuctionResult[]
+  winner       Winner?
+  payments     PaymentTransaction[]
+  favorites    BidderFavorite[]
+  credits      BidCredit[]
+  participants AuctionParticipant[]
 
   @@index([status, endAt])
   @@index([categoryId])
@@ -289,6 +296,32 @@ model Auction {
   @@index([termsId])
   @@index([parentAuctionId])
   @@index([originalAuctionId])
+}
+
+// One approved participant on a RESTRICTED auction.
+//
+// Keyed by phone number rather than by bidder, so an operator can upload the
+// list before the people on it have ever opened the mini-app — a Bidder row
+// only exists once someone connects. `phoneNumber` is stored in the same
+// normalised form as `Bidder.phoneNumber`, which is what makes the two compare
+// equal however the number was typed into the spreadsheet.
+model AuctionParticipant {
+  id          String  @id @default(cuid())
+  auctionId   String
+  auction     Auction @relation(fields: [auctionId], references: [id], onDelete: Cascade)
+  phoneNumber String
+  fullName    String?
+  note        String?
+  source      String  @default("UPLOAD") // UPLOAD | MANUAL | INHERITED
+
+  addedById String?
+  addedBy   User?    @relation("ParticipantAddedBy", fields: [addedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdAt DateTime @default(now())
+
+  @@unique([auctionId, phoneNumber])
+  @@index([auctionId])
+  @@index([phoneNumber])
+  @@index([addedById])
 }
 
 model Bid {

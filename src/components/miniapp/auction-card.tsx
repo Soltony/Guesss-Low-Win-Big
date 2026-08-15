@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { ArrowRight, Flame, Package, Users } from 'lucide-react';
+import { ArrowRight, Flame, Lock, Package, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { compactNumber } from '@/lib/format';
 import { Countdown } from './countdown';
@@ -48,6 +48,7 @@ export function AuctionCard({
   connected = false,
   bidsUsed = 0,
   carriedBids = 0,
+  blockedReason = null,
 }: {
   auction: PublicAuction;
   favorited?: boolean;
@@ -59,6 +60,10 @@ export function AuctionCard({
   bidsUsed?: number;
   /** Bids paid for in an earlier round that this bidder can spend here free. */
   carriedBids?: number;
+  /** Set when this bidder may not bid here — an invite-only auction they are
+   *  not on the list for. The server rejects the bid either way; this is what
+   *  stops the card offering a form that could only fail. */
+  blockedReason?: string | null;
 }) {
   const { t } = useLanguage();
   const [bidding, setBidding] = useState(false);
@@ -89,7 +94,15 @@ export function AuctionCard({
           )}
 
           <div className="absolute inset-x-3 top-3 flex items-start justify-between">
-            <StatusChip status={auction.status} urgent={isLive && endsWithin24h} />
+            <div className="flex flex-col items-start gap-1.5">
+              <StatusChip status={auction.status} urgent={isLive && endsWithin24h} />
+              {auction.restricted && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-foreground/85 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-background backdrop-blur">
+                  <Lock className="h-3 w-3" />
+                  Invite only
+                </span>
+              )}
+            </div>
             <span className="rounded-full bg-white/95 p-1.5 shadow-sm">
               <FavoriteButton auctionId={auction.id} initial={favorited} />
             </span>
@@ -168,6 +181,14 @@ export function AuctionCard({
               {t('auction.viewDetails')}
               <ArrowRight className="h-4 w-4" />
             </Link>
+          ) : connected && blockedReason ? (
+            <Link
+              href={`/auctions/${auction.code}`}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-border px-5 py-3 text-sm font-bold text-muted-foreground transition-colors hover:bg-secondary"
+            >
+              <Lock className="h-4 w-4" />
+              Not open to you
+            </Link>
           ) : connected ? (
             /* The bid form opens in a sheet over the list — no page change, so
                the whole flow (amount, fee approval, confirmation) finishes
@@ -194,7 +215,7 @@ export function AuctionCard({
         </div>
       </div>
 
-      {isLive && connected && (
+      {isLive && connected && !blockedReason && (
         <BidSheet
           auction={auction}
           open={bidding}

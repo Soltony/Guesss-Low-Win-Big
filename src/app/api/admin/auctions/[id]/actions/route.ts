@@ -5,6 +5,7 @@ import { createAuditLog } from '@/lib/audit-log';
 import { requestChange, requiresApproval } from '@/lib/approvals';
 import { settleAuction } from '@/lib/auction-engine';
 import { createReauction } from '@/lib/reauction';
+import { isRestricted, participantCount } from '@/lib/eligibility';
 import { notify } from '@/lib/notifications';
 import { getSettings } from '@/lib/settings';
 import { toNum } from '@/lib/format';
@@ -37,6 +38,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
       if (auction.endAt <= new Date()) {
         return jsonError('The end time is in the past — update it before publishing.', 400);
+      }
+      // A restricted auction with nothing uploaded admits nobody, so publishing
+      // it would put a page in the app that every bidder is turned away from.
+      if (isRestricted(auction) && (await participantCount(id)) === 0) {
+        return jsonError(
+          'This auction is restricted to an invited list, but no participants have been uploaded. Upload the list or set it back to open before publishing.',
+          400
+        );
       }
 
       if (await requiresApproval('publish')) {

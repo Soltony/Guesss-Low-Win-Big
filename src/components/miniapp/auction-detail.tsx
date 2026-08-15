@@ -238,6 +238,27 @@ export function AuctionDetail({
         </dl>
       </section>
 
+      {/* ---------- Invite-only notice ----------
+          Shown to everyone, not just the people it excludes: a bidder who has
+          been invited needs to know the auction is not the free-for-all the
+          rest of the app is. `blockedReason` is what tells the rest apart. */}
+      {auction.restricted && (
+        <section className="px-4 pt-4">
+          <div className="gl-panel space-y-1.5 border-l-4 border-l-accent px-4 py-3">
+            <p className="flex items-center gap-1.5 text-sm font-bold">
+              <Lock className="h-4 w-4 text-accent" />
+              Invite only
+            </p>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {blockedReason ??
+                (connected
+                  ? 'This auction is open to selected participants, and your number is on the list.'
+                  : 'This auction is open to selected participants only. Connect to see whether your number is on the list.')}
+            </p>
+          </div>
+        </section>
+      )}
+
       {/* ---------- Re-auction notice ---------- */}
       {auction.reauctionRound > 0 && (
         <section className="px-4 pt-4">

@@ -43,6 +43,11 @@ export type WinnerStatus = (typeof WINNER_STATUSES)[number];
 export const BIDDER_STATUSES = ['ACTIVE', 'SUSPENDED', 'BLOCKED'] as const;
 export type BidderStatus = (typeof BIDDER_STATUSES)[number];
 
+// Who an auction admits. RESTRICTED admits only the phone numbers on the
+// auction's uploaded participant list — see src/lib/eligibility.ts.
+export const ELIGIBILITY_MODES = ['OPEN', 'RESTRICTED'] as const;
+export type EligibilityMode = (typeof ELIGIBILITY_MODES)[number];
+
 // What settlement decided about re-running an auction that produced no winner.
 export const REAUCTION_STATES = [
   'NONE', // not settled yet, so nothing has been decided

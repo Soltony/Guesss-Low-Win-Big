@@ -3,15 +3,17 @@ import { HomeView } from '@/components/miniapp/home-view';
 import { getHomeData } from '@/lib/miniapp-data';
 import { getBidCountsByAuction, getFavoriteAuctionIds, getShellUser } from '@/lib/miniapp-user';
 import { carriedBidsByAuction } from '@/lib/reauction';
+import { blockedAuctionIds } from '@/lib/eligibility';
 
 export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
   const [user, home] = await Promise.all([getShellUser(), getHomeData()]);
-  const [favorites, bidCounts, carriedBids] = await Promise.all([
+  const [favorites, bidCounts, carriedBids, blockedAuctions] = await Promise.all([
     getFavoriteAuctionIds(user?.bidderId),
     getBidCountsByAuction(user?.bidderId),
     carriedBidsByAuction(user?.bidderId),
+    blockedAuctionIds(user?.bidderId),
   ]);
 
   return (
@@ -30,6 +32,7 @@ export default async function HomePage() {
         connected={Boolean(user)}
         bidCounts={bidCounts}
         carriedBids={carriedBids}
+        blockedAuctions={blockedAuctions}
       />
     </MiniAppShell>
   );

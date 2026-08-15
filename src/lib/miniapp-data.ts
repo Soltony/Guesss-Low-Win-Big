@@ -2,6 +2,7 @@ import prisma from './prisma';
 import { getSettings } from './settings';
 import { syncAuctionLifecycle } from './auction-engine';
 import { carriedBidsRemaining, reauctionEligibility } from './reauction';
+import { participantEligibility } from './eligibility';
 import { firstImage, toNum } from './format';
 import type { AuctionStatus } from './types';
 
@@ -43,6 +44,8 @@ export interface PublicAuction {
   reauctionAllowPreviousBidders: boolean;
   /** Code of the round this one re-runs, so the app can explain where it came from. */
   parentCode: string | null;
+  /** Open only to an invited list of phone numbers. */
+  restricted: boolean;
 }
 
 const PUBLIC_STATUSES: AuctionStatus[] = ['SCHEDULED', 'LIVE', 'ENDED', 'SETTLED'];
@@ -88,6 +91,7 @@ function mapAuction(
     reauctionAllowNewBidders: auction.reauctionAllowNewBidders,
     reauctionAllowPreviousBidders: auction.reauctionAllowPreviousBidders,
     parentCode: auction.parentAuction?.code ?? null,
+    restricted: auction.eligibilityMode === 'RESTRICTED',
   };
 }
 
@@ -288,27 +292,50 @@ export interface BidderAuctionContext {
 }
 
 /**
- * What a re-auction means for one bidder: how many of their paid bids came with
- * them, and whether this round is open to them at all. Only the mini-app calls
- * this, and only for the bidder it belongs to.
+ * What this auction means for one bidder: whether they may take part at all,
+ * and how many of their paid bids came with them from an earlier round. Only
+ * the mini-app calls this, and only for the bidder it belongs to.
+ *
+ * Both gates the bid endpoint applies are evaluated here, so a bidder who
+ * cannot bid is told on the page rather than after filling the form in.
  */
 export async function getBidderAuctionContext(
   bidderId: string,
   auctionId: string
 ): Promise<BidderAuctionContext> {
-  const auction = await prisma.auction.findUnique({
-    where: { id: auctionId },
-    select: {
-      id: true,
-      originalAuctionId: true,
-      reauctionRound: true,
-      reauctionAllowNewBidders: true,
-      reauctionAllowPreviousBidders: true,
-    },
-  });
-  if (!auction || auction.reauctionRound === 0) {
-    return { carriedBids: 0, eligible: true, eligibilityReason: null, returning: false };
+  const [auction, bidder] = await Promise.all([
+    prisma.auction.findUnique({
+      where: { id: auctionId },
+      select: {
+        id: true,
+        eligibilityMode: true,
+        originalAuctionId: true,
+        reauctionRound: true,
+        reauctionAllowNewBidders: true,
+        reauctionAllowPreviousBidders: true,
+      },
+    }),
+    prisma.bidder.findUnique({ where: { id: bidderId }, select: { phoneNumber: true } }),
+  ]);
+
+  const open = { carriedBids: 0, eligible: true, eligibilityReason: null, returning: false };
+  if (!auction) return open;
+
+  // The invite list is the harder gate and is checked first: someone who is not
+  // on it needs to hear that, not a re-auction rule they could never satisfy.
+  if (bidder) {
+    const invited = await participantEligibility(auction, bidder.phoneNumber);
+    if (!invited.eligible) {
+      return {
+        carriedBids: 0,
+        eligible: false,
+        eligibilityReason: invited.reason ?? null,
+        returning: false,
+      };
+    }
   }
+
+  if (auction.reauctionRound === 0) return open;
 
   const [carriedBids, participation] = await Promise.all([
     carriedBidsRemaining(bidderId, auctionId),

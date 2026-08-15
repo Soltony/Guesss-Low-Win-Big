@@ -2,6 +2,7 @@ import prisma from './prisma';
 import { getSettings } from './settings';
 import { createAuditLog } from './audit-log';
 import { notify } from './notifications';
+import { copyParticipants } from './eligibility';
 import { toNum } from './format';
 import type { SettingsMap } from './settings';
 import type { ReauctionConfig } from './reauction-rules';
@@ -411,6 +412,10 @@ export async function createReauction(
         displayOrder: parent.displayOrder,
         termsId: parent.termsId,
 
+        // A restricted round must not quietly reopen to everyone when it is
+        // re-run; the list itself is copied over below.
+        eligibilityMode: parent.eligibilityMode,
+
         // The rules travel with the chain, so round 3 plays by the same terms
         // bidders accepted in round 1.
         reauctionEnabled: parent.reauctionEnabled,
@@ -427,6 +432,12 @@ export async function createReauction(
         createdById: actor.id === 'SYSTEM' ? null : actor.id,
       },
     });
+
+    // The invite list defines who the round is for, so it travels with the
+    // round itself — before any credit is granted against it.
+    if (created.eligibilityMode === 'RESTRICTED') {
+      await copyParticipants(tx, parent.id, created.id, created.createdById);
+    }
 
     if (carryForward) {
       const grants = Array.from(paidByBidder.entries())

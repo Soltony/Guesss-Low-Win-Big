@@ -4,6 +4,8 @@ import { isGuardFailure, jsonError, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
 import { diffFields } from '@/lib/approvals';
 import { REAUCTION_FIELDS, parseReauctionConfig } from '@/lib/reauction';
+import { participantCount } from '@/lib/eligibility';
+import { ELIGIBILITY_MODES, type EligibilityMode } from '@/lib/types';
 import { round2, toNum } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -71,6 +73,30 @@ export async function PATCH(
 
   const data: Record<string, unknown> = {};
   const previous: Record<string, unknown> = {};
+
+  // Who the auction admits. Editable while it runs — unlike the money rules, it
+  // cannot re-price a bid that was already placed. Restricting an auction that
+  // is already live can still strand bidders who have paid, so the admin shows
+  // how many that would be before the switch is thrown.
+  if (body.eligibilityMode !== undefined) {
+    const mode = String(body.eligibilityMode);
+    if (!ELIGIBILITY_MODES.includes(mode as EligibilityMode)) {
+      return jsonError(`Participation mode must be one of: ${ELIGIBILITY_MODES.join(', ')}.`, 400);
+    }
+    if (mode === 'RESTRICTED') {
+      const listed = await participantCount(id);
+      if (listed === 0) {
+        return jsonError(
+          'Upload the list of eligible participants before restricting this auction — an empty list would let nobody bid.',
+          400
+        );
+      }
+    }
+    if (mode !== auction.eligibilityMode) {
+      previous.eligibilityMode = auction.eligibilityMode;
+      data.eligibilityMode = mode;
+    }
+  }
 
   for (const field of EDITABLE_ALWAYS) {
     if (body[field] === undefined) continue;

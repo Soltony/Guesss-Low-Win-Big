@@ -3,6 +3,7 @@ import { MiniAppShell } from '@/components/miniapp/mini-app-shell';
 import { AuctionsBrowser } from '@/components/miniapp/auctions-browser';
 import { browseAuctions } from '@/lib/miniapp-data';
 import { carriedBidsByAuction } from '@/lib/reauction';
+import { blockedAuctionIds } from '@/lib/eligibility';
 import { getBidCountsByAuction, getFavoriteAuctionIds, getShellUser } from '@/lib/miniapp-user';
 import { getSettings } from '@/lib/settings';
 
@@ -41,10 +42,11 @@ export default async function AuctionsPage({
     take: 48,
   });
 
-  const [favorites, bidCounts, carriedBids] = await Promise.all([
+  const [favorites, bidCounts, carriedBids, blockedAuctions] = await Promise.all([
     getFavoriteAuctionIds(user?.bidderId),
     getBidCountsByAuction(user?.bidderId),
     carriedBidsByAuction(user?.bidderId),
+    blockedAuctionIds(user?.bidderId),
   ]);
 
   return (
@@ -60,6 +62,7 @@ export default async function AuctionsPage({
         connected={Boolean(user)}
         bidCounts={bidCounts}
         carriedBids={carriedBids}
+        blockedAuctions={blockedAuctions}
       />
     </MiniAppShell>
   );

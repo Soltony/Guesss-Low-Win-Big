@@ -60,6 +60,7 @@ export function HomeView({
   connected = false,
   bidCounts = {},
   carriedBids = {},
+  blockedAuctions = {},
 }: {
   tagline: string;
   banners: HomeBanner[];
@@ -75,6 +76,8 @@ export function HomeView({
   bidCounts?: Record<string, number>;
   /** Prepaid bids carried into a re-auction, keyed by auction id. */
   carriedBids?: Record<string, number>;
+  /** Why the bidder cannot bid, keyed by auction id — invite-only auctions. */
+  blockedAuctions?: Record<string, string>;
 }) {
   const { t, lang } = useLanguage();
   const favoriteSet = new Set(favorites);
@@ -195,6 +198,7 @@ export function HomeView({
                 connected={connected}
                 bidsUsed={bidCounts[auction.id] ?? 0}
                 carriedBids={carriedBids[auction.id] ?? 0}
+                blockedReason={blockedAuctions[auction.id] ?? null}
               />
             ))}
           </div>
@@ -225,6 +229,7 @@ export function HomeView({
                 connected={connected}
                 bidsUsed={bidCounts[auction.id] ?? 0}
                 carriedBids={carriedBids[auction.id] ?? 0}
+                blockedReason={blockedAuctions[auction.id] ?? null}
               />
             ))
           )}

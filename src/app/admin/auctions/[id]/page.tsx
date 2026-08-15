@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { Eye, Gavel, ListOrdered, Trophy, Users, Wallet } from 'lucide-react';
+import { Eye, Gavel, ListOrdered, Trophy, UserCheck, Users, Wallet } from 'lucide-react';
 import prisma from '@/lib/prisma';
 import { PageHeader } from '@/components/admin/page-header';
 import { StatCard, StatGrid } from '@/components/admin/stat-card';
@@ -12,6 +12,7 @@ import { getCurrentUser } from '@/lib/session';
 import { hasPermission } from '@/lib/permissions';
 import { syncAuctionLifecycle, rankUniqueBids } from '@/lib/auction-engine';
 import { lineageRounds } from '@/lib/reauction';
+import { isRestricted, participantCount, unlistedBidderCount } from '@/lib/eligibility';
 import { maskPhone, toNum } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -57,35 +58,38 @@ export default async function AdminAuctionDetail({
   const canSettle = hasPermission(user, 'auctions', 'approve');
   const canSeeBids = hasPermission(user, 'bids', 'read');
 
-  const [paidFees, recentBids, distribution, rounds, credits] = await Promise.all([
-    prisma.bid.aggregate({
-      where: { auctionId: id, status: 'ACTIVE' },
-      _sum: { feeAmount: true },
-    }),
-    canSeeBids
-      ? prisma.bid.findMany({
-          where: { auctionId: id },
-          orderBy: { createdAt: 'desc' },
-          take: 25,
-          include: { bidder: { select: { phoneNumber: true, fullName: true } } },
-        })
-      : Promise.resolve([]),
-    // Uniqueness preview for operators: how the result would land right now.
-    canSettle && auction.status !== 'SETTLED'
-      ? prisma.bid.findMany({
-          where: { auctionId: id, status: 'ACTIVE' },
-          select: { id: true, bidderId: true, amount: true, createdAt: true },
-          orderBy: { createdAt: 'asc' },
-        })
-      : Promise.resolve([]),
-    lineageRounds(auction),
-    prisma.bidCredit.findMany({
-      where: { auctionId: id },
-      orderBy: { granted: 'desc' },
-      take: 25,
-      include: { bidder: { select: { phoneNumber: true, fullName: true } } },
-    }),
-  ]);
+  const [paidFees, recentBids, distribution, rounds, credits, participantTotal, unlisted] =
+    await Promise.all([
+      prisma.bid.aggregate({
+        where: { auctionId: id, status: 'ACTIVE' },
+        _sum: { feeAmount: true },
+      }),
+      canSeeBids
+        ? prisma.bid.findMany({
+            where: { auctionId: id },
+            orderBy: { createdAt: 'desc' },
+            take: 25,
+            include: { bidder: { select: { phoneNumber: true, fullName: true } } },
+          })
+        : Promise.resolve([]),
+      // Uniqueness preview for operators: how the result would land right now.
+      canSettle && auction.status !== 'SETTLED'
+        ? prisma.bid.findMany({
+            where: { auctionId: id, status: 'ACTIVE' },
+            select: { id: true, bidderId: true, amount: true, createdAt: true },
+            orderBy: { createdAt: 'asc' },
+          })
+        : Promise.resolve([]),
+      lineageRounds(auction),
+      prisma.bidCredit.findMany({
+        where: { auctionId: id },
+        orderBy: { granted: 'desc' },
+        take: 25,
+        include: { bidder: { select: { phoneNumber: true, fullName: true } } },
+      }),
+      participantCount(id),
+      unlistedBidderCount(auction),
+    ]);
 
   const preview =
     distribution.length > 0
@@ -458,6 +462,50 @@ export default async function AdminAuctionDetail({
             canSettle={canSettle}
           />
 
+          {/* Participation */}
+          <TableCard>
+            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+              <h2 className="flex items-center gap-2 font-semibold">
+                <UserCheck className="h-4 w-4 text-muted-foreground" />
+                Participation
+              </h2>
+              {canUpdate && (
+                <Link
+                  href={`/admin/auctions/${auction.id}/participants`}
+                  className="text-xs font-semibold text-primary hover:underline"
+                >
+                  Manage list →
+                </Link>
+              )}
+            </div>
+
+            <div className="space-y-2 px-4 py-3 text-sm">
+              <p className="font-medium">
+                {isRestricted(auction)
+                  ? `Invited participants only — ${participantTotal.toLocaleString()} on the list`
+                  : 'Open to every bidder'}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {isRestricted(auction)
+                  ? 'Everyone can see this auction, but only the uploaded numbers can place a bid.'
+                  : 'Upload a list of phone numbers to restrict it to invited participants.'}
+              </p>
+
+              {isRestricted(auction) && participantTotal === 0 && (
+                <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
+                  The list is empty, so nobody can bid on this auction.
+                </p>
+              )}
+
+              {unlisted > 0 && (
+                <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
+                  {unlisted} bidder(s) already bid here but are not on the list — they cannot place
+                  any more.
+                </p>
+              )}
+            </div>
+          </TableCard>
+
           <TableCard>
             <div className="border-b border-border px-4 py-3">
               <h2 className="font-semibold">Details</h2>
@@ -468,6 +516,12 @@ export default async function AdminAuctionDetail({
                 ['Item', auction.item.name],
                 ['Category', auction.category.name],
                 ['Bid fee', `${toNum(auction.bidFee).toFixed(2)} ${currency}`],
+                [
+                  'Who may bid',
+                  isRestricted(auction)
+                    ? `Invited only (${participantTotal.toLocaleString()})`
+                    : 'Everyone',
+                ],
                 ['Max bids / bidder', String(auction.maxBidsPerUser)],
                 [
                   'Max bids / auction',

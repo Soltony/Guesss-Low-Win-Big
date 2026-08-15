@@ -9,6 +9,7 @@ import {
   reauctionEligibility,
   releaseBidCredit,
 } from './reauction';
+import { participantEligibility } from './eligibility';
 import { PaymentError, initiateBidFeePayment } from './payment-gateway';
 
 export class BidRejected extends Error {
@@ -93,6 +94,20 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
             ? 'This auction was cancelled.'
             : 'This auction has already closed.';
     throw new BidRejected(message, 'AUCTION_NOT_LIVE', 409);
+  }
+
+  // ---- Invited participants ----
+  // A restricted auction admits only the numbers on its uploaded list, however
+  // the bidder found the page. Checked before anything about the amount, so an
+  // uninvited bidder hears the real reason rather than a complaint about their
+  // bid, and well before any money is discussed.
+  const invited = await participantEligibility(auction, bidder.phoneNumber);
+  if (!invited.eligible) {
+    throw new BidRejected(
+      invited.reason ?? 'You are not eligible to bid on this auction.',
+      'NOT_ON_PARTICIPANT_LIST',
+      403
+    );
   }
 
   // ---- Amount validation ----
