@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
 import { compactNumber } from '@/lib/format';
 import { splitCarriedBids } from '@/lib/reauction-rules';
 import { Countdown } from './countdown';
-import { BidPanel } from './bid-panel';
+import { BidSheet } from './bid-sheet';
 import { FavoriteButton } from './favorite-button';
 import { useLanguage } from './language-provider';
 import type { PublicAuction } from '@/lib/miniapp-data';
@@ -74,19 +74,24 @@ export function AuctionDetail({
 }) {
   const { t, lang } = useLanguage();
   const [activeImage, setActiveImage] = useState(0);
+  const [bidding, setBidding] = useState(false);
   const currency = auction.currency === 'ETB' ? 'Br' : auction.currency;
   const isLive = auction.status === 'LIVE';
+  const remaining = Math.max(0, auction.maxBidsPerUser - myBids.length);
   // How the bidder's remaining allowance in this round divides into bids they
   // have already paid for and bids that will be charged.
-  const allowance = splitCarriedBids(
-    Math.max(0, auction.maxBidsPerUser - myBids.length),
-    carriedBids
-  );
+  const allowance = splitCarriedBids(remaining, carriedBids);
   const images = auction.images;
   const endsWithin24h = new Date(auction.endAt).getTime() - Date.now() < 86_400_000;
 
+  // The page is long — gallery, facts, rules, past bids — so the way in to the
+  // bid form rides along the bottom of the viewport instead of sitting at a
+  // fixed depth the bidder has to scroll back to.
+  const showBidBar = !auction.settled && connected;
+  const barDisabled = !isLive || Boolean(blockedReason) || remaining === 0;
+
   return (
-    <div className="pb-10">
+    <div className={cn('pb-10', showBidBar && 'pb-28')}>
       {/* ---------- Dark header: back bar, gallery, title ---------- */}
       <section className="gl-ink gl-spotlight relative overflow-hidden pb-8">
         <div className="gl-dots pointer-events-none absolute inset-0 opacity-60" />
@@ -259,55 +264,51 @@ export function AuctionDetail({
         </section>
       )}
 
-      {/* ---------- Result or bidding ---------- */}
-      <section className="px-4 pt-4">
-        {auction.settled ? (
-          <div className="gl-card overflow-hidden">
-            <div className="gl-ink gl-spotlight relative px-4 py-3">
-              <p className="relative flex items-center gap-2 text-sm font-bold">
-                <Trophy className="h-4 w-4 text-primary" />
-                {auction.winner ? t('auction.winner') : t('auction.noWinner')}
-              </p>
-            </div>
-            {auction.winner && (
-              <div className="flex items-end justify-between gap-3 p-4">
-                <div>
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Taken by
-                  </p>
-                  <p className="text-sm font-semibold">{auction.winner.displayName}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    {t('auction.winningBid')}
-                  </p>
-                  <p className="text-2xl font-bold leading-none tabular-nums text-primary">
-                    {auction.winner.amount.toFixed(2)}
-                    <span className="ml-1 text-sm font-semibold text-muted-foreground">
-                      {currency}
-                    </span>
-                  </p>
-                </div>
+      {/* ---------- Result, or the way in for a bidder without a session ----
+          A connected bidder gets the bid bar at the foot of the screen, so
+          nothing is duplicated here. ---------- */}
+      {(auction.settled || !connected) && (
+        <section className="px-4 pt-4">
+          {auction.settled ? (
+            <div className="gl-card overflow-hidden">
+              <div className="gl-ink gl-spotlight relative px-4 py-3">
+                <p className="relative flex items-center gap-2 text-sm font-bold">
+                  <Trophy className="h-4 w-4 text-primary" />
+                  {auction.winner ? t('auction.winner') : t('auction.noWinner')}
+                </p>
               </div>
-            )}
-          </div>
-        ) : !connected ? (
-          <Link
-            href="/connect"
-            className="gl-gold flex w-full items-center justify-center rounded-xl px-4 py-3.5 text-sm font-bold"
-          >
-            Connect to bid
-          </Link>
-        ) : (
-          <BidPanel
-            auction={auction}
-            connected={connected}
-            bidsUsed={myBids.length}
-            carriedBids={carriedBids}
-            blockedReason={blockedReason}
-          />
-        )}
-      </section>
+              {auction.winner && (
+                <div className="flex items-end justify-between gap-3 p-4">
+                  <div>
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Taken by
+                    </p>
+                    <p className="text-sm font-semibold">{auction.winner.displayName}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      {t('auction.winningBid')}
+                    </p>
+                    <p className="text-2xl font-bold leading-none tabular-nums text-primary">
+                      {auction.winner.amount.toFixed(2)}
+                      <span className="ml-1 text-sm font-semibold text-muted-foreground">
+                        {currency}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link
+              href="/connect"
+              className="gl-gold flex w-full items-center justify-center rounded-xl px-4 py-3.5 text-sm font-bold"
+            >
+              Connect to bid
+            </Link>
+          )}
+        </section>
+      )}
 
       {/* ---------- My bids ---------- */}
       <section className="px-4 pt-7">
@@ -424,6 +425,61 @@ export function AuctionDetail({
           </details>
         )}
       </section>
+
+      {/* ---------- Bid bar + sheet ---------- */}
+      {showBidBar && (
+        <>
+          <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 backdrop-blur">
+            <div
+              className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 pt-3"
+              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)' }}
+            >
+              <div className="shrink-0">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {allowance.free > 0 ? 'Next bid' : t('auction.bidFee')}
+                </p>
+                <p className="text-sm font-bold tabular-nums">
+                  {allowance.free > 0
+                    ? 'Free'
+                    : `${auction.bidFee.toFixed(2)} ${currency}`}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setBidding(true)}
+                disabled={barDisabled}
+                aria-haspopup="dialog"
+                aria-expanded={bidding}
+                className={cn(
+                  'gl-gold flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-bold',
+                  barDisabled && 'cursor-not-allowed opacity-50'
+                )}
+              >
+                {!isLive
+                  ? auction.status === 'SCHEDULED'
+                    ? t('auction.scheduled')
+                    : t('auction.ended')
+                  : blockedReason
+                    ? 'Not open to you'
+                    : remaining === 0
+                      ? 'Bid limit reached'
+                      : t('auction.submitBid')}
+              </button>
+            </div>
+          </div>
+
+          <BidSheet
+            auction={auction}
+            open={bidding}
+            onOpenChange={setBidding}
+            connected={connected}
+            bidsUsed={myBids.length}
+            carriedBids={carriedBids}
+            blockedReason={blockedReason}
+          />
+        </>
+      )}
     </div>
   );
 }

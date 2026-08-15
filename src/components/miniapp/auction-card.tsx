@@ -2,11 +2,11 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { ArrowRight, ChevronUp, Flame, Package, Users } from 'lucide-react';
+import { ArrowRight, Flame, Package, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { compactNumber } from '@/lib/format';
 import { Countdown } from './countdown';
-import { BidPanel } from './bid-panel';
+import { BidSheet } from './bid-sheet';
 import { useLanguage } from './language-provider';
 import { FavoriteButton } from './favorite-button';
 import type { PublicAuction } from '@/lib/miniapp-data';
@@ -38,7 +38,8 @@ function StatusChip({ status, urgent }: { status: string; urgent?: boolean }) {
 /**
  * The workhorse of every list. Leads with the product and the value on offer,
  * because that is what makes someone tap; the mechanics sit underneath — and
- * the bid form opens in place, so a bid never needs the detail page.
+ * the bid form opens in a sheet over the list, so a bid never needs the detail
+ * page and never needs a scroll to reach the amount field.
  */
 export function AuctionCard({
   auction,
@@ -64,7 +65,6 @@ export function AuctionCard({
   const currency = auction.currency === 'ETB' ? 'Br' : auction.currency;
   const isLive = auction.status === 'LIVE';
   const endsWithin24h = new Date(auction.endAt).getTime() - Date.now() < 86_400_000;
-  const panelId = `bid-panel-${auction.id}`;
 
   return (
     <article
@@ -169,21 +169,18 @@ export function AuctionCard({
               <ArrowRight className="h-4 w-4" />
             </Link>
           ) : connected ? (
-            /* The bid form drops open right here — no page change, so the whole
-               flow (amount, fee approval, confirmation) finishes on this list. */
+            /* The bid form opens in a sheet over the list — no page change, so
+               the whole flow (amount, fee approval, confirmation) finishes
+               here, in front of whatever the bidder was looking at. */
             <button
               type="button"
-              onClick={() => setBidding((open) => !open)}
+              onClick={() => setBidding(true)}
+              aria-haspopup="dialog"
               aria-expanded={bidding}
-              aria-controls={panelId}
               className="gl-gold inline-flex items-center gap-1.5 rounded-xl px-5 py-3 text-sm font-bold"
             >
               {t('auction.submitBid')}
-              {bidding ? (
-                <ChevronUp className="h-4 w-4" />
-              ) : (
-                <ArrowRight className="h-4 w-4" />
-              )}
+              <ArrowRight className="h-4 w-4" />
             </button>
           ) : (
             <Link
@@ -197,17 +194,15 @@ export function AuctionCard({
         </div>
       </div>
 
-      {isLive && connected && bidding && (
-        <div id={panelId} className="gl-rise">
-          <BidPanel
-            auction={auction}
-            connected={connected}
-            bidsUsed={bidsUsed}
-            carriedBids={carriedBids}
-            variant="inline"
-            onClose={() => setBidding(false)}
-          />
-        </div>
+      {isLive && connected && (
+        <BidSheet
+          auction={auction}
+          open={bidding}
+          onOpenChange={setBidding}
+          connected={connected}
+          bidsUsed={bidsUsed}
+          carriedBids={carriedBids}
+        />
       )}
     </article>
   );

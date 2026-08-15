@@ -69,6 +69,7 @@ const dictionary = {
     en: 'Bid status is revealed when the auction ends.',
     am: 'የጨረታ ሁኔታ ጨረታው ሲያልቅ ይገለጻል።',
   },
+  'bid.registered': { en: 'Registered bid', am: 'የተመዘገበ ጨረታ' },
   'bid.feeNotice': {
     en: 'A service fee of {fee} is charged for each bid, paid from your wallet.',
     am: 'ለእያንዳንዱ ጨረታ {fee} የአገልግሎት ክፍያ ከኪስ ቦርሳዎ ይከፈላል።',

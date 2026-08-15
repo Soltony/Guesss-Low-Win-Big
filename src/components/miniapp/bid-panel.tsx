@@ -26,6 +26,11 @@ interface Props {
   variant?: 'card' | 'inline';
   /** Rendered as a close control in the header when the host can collapse it. */
   onClose?: () => void;
+  /**
+   * Fires while a submission or a fee approval is in flight, so a host that can
+   * be dismissed (the bid sheet) knows not to close out from under the poll.
+   */
+  onBusyChange?: (busy: boolean) => void;
 }
 
 const POLL_INTERVAL_MS = 2000;
@@ -39,6 +44,7 @@ export function BidPanel({
   blockedReason = null,
   variant = 'card',
   onClose,
+  onBusyChange,
 }: Props) {
   const { t } = useLanguage();
   const { toast } = useToast();
@@ -47,20 +53,25 @@ export function BidPanel({
   const [amount, setAmount] = useState('');
   const [phase, setPhase] = useState<Phase>('idle');
   const [message, setMessage] = useState<string | null>(null);
+  // The field is cleared on success so the next bid starts blank, so the amount
+  // that was accepted has to be kept separately for the confirmation to name it.
+  const [registeredAmount, setRegisteredAmount] = useState<number | null>(null);
   // Server-confirmed balance after each accepted bid, so the panel does not
   // promise a free bid the credit ledger has already spent.
   const [creditsLeft, setCreditsLeft] = useState(carriedBids);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const amountRef = useRef<HTMLInputElement>(null);
+  const statusRef = useRef<HTMLDivElement>(null);
   // Several cards can have their form open at once, so the field needs an id
   // of its own rather than a shared literal.
   const amountId = useId();
 
   /** Inline sits inside a list card, so it trims to the essentials. */
   const compact = variant === 'inline';
-  /** Shared chrome for the awaiting/confirmed/failed notes under the button. */
+  /** Shared chrome for the blocked/awaiting/confirmed/failed notes. */
   const noteClass = cn(
-    'flex items-start gap-2 rounded-xl border px-3 py-2.5 leading-relaxed',
-    compact ? 'mt-2 text-[11px]' : 'mt-3 text-xs'
+    'flex items-start gap-2.5 rounded-xl border px-3 py-2.5 leading-relaxed',
+    compact ? 'mb-3 text-xs' : 'mb-3 text-sm'
   );
   const currency = auction.currency === 'ETB' ? 'Br' : auction.currency;
   const remaining = Math.max(0, auction.maxBidsPerUser - bidsUsed);
@@ -84,6 +95,17 @@ export function BidPanel({
     []
   );
 
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
+
+  // A result that arrives while the sheet is scrolled past it would still go
+  // unread, so every outcome pulls itself into view.
+  useEffect(() => {
+    if (phase === 'idle' || phase === 'submitting') return;
+    statusRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [phase]);
+
   const step = (direction: 1 | -1) => {
     const current = Number(amount);
     const base = Number.isFinite(current) && amount !== '' ? current : auction.minBidAmount;
@@ -93,7 +115,7 @@ export function BidPanel({
   };
 
   const pollBidStatus = useCallback(
-    (bidId: string) => {
+    (bidId: string, bidAmount: number) => {
       const startedAt = Date.now();
       if (pollTimer.current) clearInterval(pollTimer.current);
 
@@ -116,6 +138,9 @@ export function BidPanel({
             clearInterval(pollTimer.current!);
             setPhase('confirmed');
             setMessage(null);
+            // What the ledger holds, not what was typed — the server rounds to
+            // two places before it stores the bid.
+            setRegisteredAmount(typeof data.amount === 'number' ? data.amount : bidAmount);
             setAmount('');
             router.refresh();
           } else if (data.status === 'FAILED' || data.status === 'VOID') {
@@ -149,6 +174,10 @@ export function BidPanel({
     if (!amount || !Number.isFinite(value)) {
       setMessage('Enter a bid amount.');
       setPhase('failed');
+      // Send them straight to the field. A note under the button reads as an
+      // error about the button, and leaves the empty input to be hunted for.
+      amountRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      amountRef.current?.focus();
       return;
     }
 
@@ -180,13 +209,14 @@ export function BidPanel({
             ? 'Covered by a bid you already paid for in the previous round — no new fee was charged.'
             : null
         );
+        setRegisteredAmount(typeof data.amount === 'number' ? data.amount : value);
         setAmount('');
         router.refresh();
         return;
       }
 
       setPhase('awaiting-payment');
-      pollBidStatus(data.bidId);
+      pollBidStatus(data.bidId, value);
     } catch {
       setPhase('failed');
       setMessage('Network error. Check your connection and try again.');
@@ -228,6 +258,68 @@ export function BidPanel({
       </div>
 
       <div className={cn(compact ? 'p-3' : 'p-4')}>
+        {/* The answer to "did my bid land?" leads the form. Under the submit
+            button it was the last thing in a scrolling sheet, sitting on the
+            bottom edge of the screen — the one place it reads as a footnote. */}
+        <div ref={statusRef} aria-live="polite">
+          {blockedReason && (
+            <div className={cn(noteClass, 'border-border bg-secondary/60')}>
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <span>{blockedReason}</span>
+            </div>
+          )}
+
+          {phase === 'awaiting-payment' && (
+            <div className={cn(noteClass, 'border-accent/40 bg-accent/10')}>
+              <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-accent" />
+              <span>
+                <span className="block text-sm font-bold">{t('bid.confirming')}</span>
+                <span className="mt-0.5 block text-muted-foreground">
+                  Approve the {auction.bidFee.toFixed(2)} {currency} fee in your wallet. Your bid
+                  counts the moment the payment clears — keep this open.
+                </span>
+              </span>
+            </div>
+          )}
+
+          {phase === 'confirmed' && (
+            <div className={cn(noteClass, 'border-success/40 bg-success/10')}>
+              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-success" />
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-success">{t('bid.confirmed')}</span>
+
+                {/* The figure the bidder is trusting us with, read back to them
+                    at the size they typed it — the field is blank again by now. */}
+                {registeredAmount !== null && (
+                  <span className="mt-1.5 flex items-baseline gap-1.5">
+                    <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      {t('bid.registered')}
+                    </span>
+                    <span className="text-xl font-extrabold leading-none tabular-nums">
+                      {registeredAmount.toFixed(2)}
+                      <span className="ml-1 text-xs font-semibold text-muted-foreground">
+                        {currency}
+                      </span>
+                    </span>
+                  </span>
+                )}
+
+                <span className="mt-1.5 block text-muted-foreground">
+                  {message ? `${message} ` : ''}
+                  {t('bid.hiddenUntilEnd')}
+                </span>
+              </span>
+            </div>
+          )}
+
+          {phase === 'failed' && message && (
+            <div className={cn(noteClass, 'border-destructive/40 bg-destructive/10')}>
+              <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+              <span className="font-medium">{message}</span>
+            </div>
+          )}
+        </div>
+
         <div className="flex items-stretch gap-2">
           <button
             type="button"
@@ -245,6 +337,7 @@ export function BidPanel({
           <div className="relative min-w-0 flex-1">
             <input
               id={amountId}
+              ref={amountRef}
               type="number"
               inputMode="decimal"
               value={amount}
@@ -342,39 +435,6 @@ export function BidPanel({
           </p>
         )}
 
-        {blockedReason && (
-          <p className={cn(noteClass, 'border-border bg-secondary/60')}>
-            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <span>{blockedReason}</span>
-          </p>
-        )}
-
-        {phase === 'awaiting-payment' && (
-          <p className={cn(noteClass, 'border-accent/30 bg-accent/5')}>
-            <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
-            <span>
-              Approve the {auction.bidFee.toFixed(2)} {currency} fee in your wallet. Your bid counts
-              the moment the payment clears — keep this screen open.
-            </span>
-          </p>
-        )}
-
-        {phase === 'confirmed' && (
-          <p className={cn(noteClass, 'border-success/30 bg-success/5')}>
-            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
-            <span>
-              {t('bid.confirmed')}. {message ? `${message} ` : ''}
-              {t('bid.hiddenUntilEnd')}
-            </span>
-          </p>
-        )}
-
-        {phase === 'failed' && message && (
-          <p className={cn(noteClass, 'border-destructive/30 bg-destructive/5')}>
-            <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
-            <span>{message}</span>
-          </p>
-        )}
       </div>
 
       {!compact && (
