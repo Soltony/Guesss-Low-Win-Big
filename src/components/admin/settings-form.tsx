@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { ImageUploader } from '@/components/admin/image-uploader';
 import { useToast } from '@/hooks/use-toast';
 import type { SettingDefinition, SettingsMap } from '@/lib/settings';
 
@@ -106,6 +107,26 @@ export function SettingsForm({
               setDraft((prev) => ({ ...prev, [definition.key]: checked }))
             }
           />
+        </div>
+      );
+    }
+
+    // The uploader draws its own label and description.
+    if (definition.type === 'image') {
+      return (
+        <div key={definition.key} className="border-b border-border py-3 last:border-0">
+          <ImageUploader
+            label={definition.label}
+            description={definition.description}
+            value={String(value ?? '')}
+            disabled={!canUpdate}
+            onChange={(url) => setDraft((prev) => ({ ...prev, [definition.key]: url }))}
+          />
+          {changed && (
+            <Badge variant="secondary" className="mt-1.5 px-1.5 py-0 text-[10px]">
+              Changed
+            </Badge>
+          )}
         </div>
       );
     }

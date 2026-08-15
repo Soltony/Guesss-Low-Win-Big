@@ -30,7 +30,7 @@ export default async function ContentPage() {
     <>
       <PageHeader
         title="Content"
-        description="Home-page banners, mini-app ad popups and the terms & conditions shown to bidders."
+        description="Home-page banners, mini-app ad popups, the terms & conditions shown to bidders, and the app icon."
       />
       <ContentManager
         banners={banners.map((banner) => ({
@@ -75,9 +75,11 @@ export default async function ContentPage() {
           auctionCount: term._count.auctions,
           createdAt: term.createdAt.toISOString(),
         }))}
+        logoUrl={String(settings['platform.logoUrl'] ?? '')}
         canCreate={hasPermission(user, 'content', 'create')}
         canUpdate={hasPermission(user, 'content', 'update')}
         canDelete={hasPermission(user, 'content', 'delete')}
+        canEditBranding={hasPermission(user, 'settings', 'update')}
       />
     </>
   );

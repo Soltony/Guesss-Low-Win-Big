@@ -9,6 +9,7 @@ import {
   Loader2,
   Megaphone,
   MousePointerClick,
+  Palette,
   Pencil,
   Plus,
   ScrollText,
@@ -129,9 +130,11 @@ export function ContentManager({
   adsEnabled,
   adsPerLogin,
   terms,
+  logoUrl,
   canCreate,
   canUpdate,
   canDelete,
+  canEditBranding,
 }: {
   banners: BannerRow[];
   ads: AdRow[];
@@ -139,14 +142,19 @@ export function ContentManager({
   adsEnabled: boolean;
   adsPerLogin: number;
   terms: TermsRow[];
+  /** `platform.logoUrl` — '' means the built-in mark is in use. */
+  logoUrl: string;
   canCreate: boolean;
   canUpdate: boolean;
   canDelete: boolean;
+  /** The icon is a platform setting, so editing it needs the settings module. */
+  canEditBranding: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [bannerForm, setBannerForm] = useState<BannerRow | null>(null);
   const [adForm, setAdForm] = useState<AdRow | null>(null);
+  const [logoDraft, setLogoDraft] = useState(logoUrl);
   // Mirrors the server's servable test: active, and inside its run window.
   const now = Date.now();
   const liveAds = ads.filter(
@@ -261,6 +269,36 @@ export function ContentManager({
     }
   };
 
+  /** The icon lives in the settings registry, not in a content table, so it is
+   *  saved through the settings endpoint that already audits every change. */
+  const saveBranding = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      const response = await fetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: { 'platform.logoUrl': logoDraft } }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        toast({ variant: 'destructive', title: 'Save failed', description: data?.error });
+        return;
+      }
+
+      toast({
+        title: data.changed ? 'App icon saved' : 'No changes to apply',
+        description: data.changed
+          ? 'Reload the page to see the new icon in the browser tab.'
+          : undefined,
+      });
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const act = async (url: string, options: RequestInit, successTitle: string) => {
     const response = await fetch(url, options);
     const data = await response.json().catch(() => ({}));
@@ -287,6 +325,10 @@ export function ContentManager({
           <TabsTrigger value="terms">
             <ScrollText className="mr-1.5 h-4 w-4" />
             Terms &amp; conditions
+          </TabsTrigger>
+          <TabsTrigger value="branding">
+            <Palette className="mr-1.5 h-4 w-4" />
+            Branding
           </TabsTrigger>
         </TabsList>
 
@@ -642,6 +684,85 @@ export function ContentManager({
               </tbody>
             </table>
           </TableCard>
+        </TabsContent>
+
+        <TabsContent value="branding" className="mt-4">
+          <form onSubmit={saveBranding} className="max-w-2xl space-y-4">
+            <div className="rounded-xl border border-border bg-card p-4">
+              <ImageUploader
+                label="App icon"
+                description="Shown in the admin sidebar, the mini-app header, the sign-in screens and the browser tab. A square image reads best — around 512×512, with a transparent background if you have one. Remove it to go back to the built-in GuessLow mark."
+                value={logoDraft}
+                disabled={!canEditBranding}
+                onChange={setLogoDraft}
+              />
+            </div>
+
+            <div className="rounded-xl border border-border bg-card p-4">
+              <p className="mb-3 text-sm font-semibold">Preview</p>
+              <div className="flex flex-wrap gap-3">
+                {/* Admin sidebar */}
+                <div className="flex h-14 min-w-[200px] flex-1 items-center gap-2 rounded-lg border border-border bg-background px-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={logoDraft || '/brand/logo'}
+                    alt=""
+                    className="h-7 w-7 rounded-lg object-contain"
+                  />
+                  <span className="text-lg font-semibold tracking-tight text-primary">
+                    GuessLow
+                  </span>
+                </div>
+
+                {/* Mini-app header */}
+                <div className="flex h-14 min-w-[200px] flex-1 items-center gap-2 rounded-lg bg-foreground px-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={logoDraft || '/brand/logo'}
+                    alt=""
+                    className="h-8 w-8 rounded-lg object-contain"
+                  />
+                  <span className="text-[17px] font-bold tracking-tight text-background">
+                    Guess<span className="text-primary">Low</span>
+                  </span>
+                </div>
+
+                {/* Browser tab */}
+                <div className="flex h-14 min-w-[200px] flex-1 items-center gap-2 rounded-lg border border-border bg-secondary px-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={logoDraft || '/brand/logo'}
+                    alt=""
+                    className="h-4 w-4 rounded-sm object-contain"
+                  />
+                  <span className="truncate text-xs text-muted-foreground">Content | GuessLow</span>
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                The tab icon is cached by the browser — reload the page after saving to see it
+                change.
+              </p>
+            </div>
+
+            {canEditBranding ? (
+              <div className="flex items-center gap-2">
+                <Button type="submit" disabled={busy || logoDraft === logoUrl}>
+                  {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Save icon
+                </Button>
+                {logoDraft !== logoUrl && (
+                  <Button type="button" variant="outline" onClick={() => setLogoDraft(logoUrl)}>
+                    Discard
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                The app icon is a platform setting — you need permission to update{' '}
+                <strong>Settings</strong> to change it.
+              </p>
+            )}
+          </form>
         </TabsContent>
       </Tabs>
 

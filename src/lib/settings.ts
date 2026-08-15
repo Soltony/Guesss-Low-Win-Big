@@ -8,7 +8,7 @@ import prisma from './prisma';
  * and the rest of the code reads values through `getSetting`.
  */
 
-export type SettingType = 'number' | 'string' | 'boolean' | 'select' | 'textarea';
+export type SettingType = 'number' | 'string' | 'boolean' | 'select' | 'textarea' | 'image';
 
 export interface SettingDefinition {
   key: string;
@@ -59,6 +59,15 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     category: 'platform',
     type: 'string',
     default: 'GuessLow',
+  },
+  {
+    key: 'platform.logoUrl',
+    label: 'App icon',
+    description:
+      'Brand mark shown in the admin sidebar, the mini-app header, the sign-in screens and the browser tab. Leave it empty to use the built-in GuessLow mark. A square image reads best — around 512×512.',
+    category: 'platform',
+    type: 'image',
+    default: '',
   },
   {
     key: 'platform.tagline',
@@ -715,6 +724,24 @@ export function validateSettingValue(
     if (def.max !== undefined && n > def.max)
       return { ok: false, error: `${def.label} must be at most ${def.max}.` };
     return { ok: true, value: n };
+  }
+
+  // An image is stored as the URL the uploader produced. Only our own upload
+  // paths and absolute http(s) URLs are accepted, so a stored value can never
+  // become a `javascript:` or `data:` src once it is rendered.
+  if (def.type === 'image') {
+    const url = String(value ?? '').trim();
+    if (!url) return { ok: true, value: '' };
+    if (url.length > 2000) return { ok: false, error: `${def.label} URL is too long.` };
+
+    const sameOrigin = url.startsWith('/') && !url.startsWith('//');
+    if (!sameOrigin && !/^https?:\/\//i.test(url)) {
+      return {
+        ok: false,
+        error: `${def.label} must be an uploaded image or an http(s) URL.`,
+      };
+    }
+    return { ok: true, value: url };
   }
 
   const s = String(value ?? '');

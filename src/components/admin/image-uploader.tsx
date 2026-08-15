@@ -33,6 +33,7 @@ export function ImageUploader({
   label = 'Image',
   description,
   required,
+  disabled,
   className,
 }: {
   value: string;
@@ -40,6 +41,8 @@ export function ImageUploader({
   label?: string;
   description?: string;
   required?: boolean;
+  /** Read-only: the artwork still shows, nothing can be changed. */
+  disabled?: boolean;
   className?: string;
 }) {
   const inputId = useId();
@@ -80,14 +83,16 @@ export function ImageUploader({
           {label}
           {required && <span className="ml-0.5 text-destructive">*</span>}
         </Label>
-        <button
-          type="button"
-          onClick={() => setShowUrl((v) => !v)}
-          className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-        >
-          <Link2 className="h-3 w-3" />
-          {showUrl ? 'Hide URL field' : 'Use a URL instead'}
-        </button>
+        {!disabled && (
+          <button
+            type="button"
+            onClick={() => setShowUrl((v) => !v)}
+            className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            <Link2 className="h-3 w-3" />
+            {showUrl ? 'Hide URL field' : 'Use a URL instead'}
+          </button>
+        )}
       </div>
 
       {description && <p className="text-xs text-muted-foreground">{description}</p>}
@@ -104,28 +109,34 @@ export function ImageUploader({
             }}
           />
           <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{value}</p>
-          <div className="flex shrink-0 gap-1">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={uploading}
-              onClick={() => fileRef.current?.click()}
-            >
-              Replace
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="text-destructive"
-              onClick={() => onChange('')}
-              aria-label="Remove image"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </div>
+          {!disabled && (
+            <div className="flex shrink-0 gap-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={uploading}
+                onClick={() => fileRef.current?.click()}
+              >
+                Replace
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-destructive"
+                onClick={() => onChange('')}
+                aria-label="Remove image"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
         </div>
+      ) : disabled ? (
+        <p className="rounded-md border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+          No image set.
+        </p>
       ) : (
         <button
           type="button"
@@ -167,10 +178,11 @@ export function ImageUploader({
         type="file"
         accept={ACCEPTED_IMAGE_TYPES}
         className="sr-only"
+        disabled={disabled}
         onChange={(event) => handleFile(event.target.files?.[0])}
       />
 
-      {showUrl && (
+      {showUrl && !disabled && (
         <Input
           value={value}
           onChange={(event) => onChange(event.target.value)}
