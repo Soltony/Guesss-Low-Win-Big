@@ -7,7 +7,9 @@ import {
   AlertCircle,
   Download,
   FileSpreadsheet,
+  ListChecks,
   Loader2,
+  RefreshCw,
   Search,
   Trash2,
   Upload,
@@ -69,11 +71,30 @@ interface ImportResult {
   total: number;
 }
 
+/** A saved roster this auction's list was copied from. */
+interface SourceList {
+  id: string;
+  name: string;
+  entryCount: number;
+  syncedAt: string | null;
+  /** The saved list has been edited since the copy was taken. */
+  stale: boolean;
+}
+
+export interface SavedListOption {
+  id: string;
+  name: string;
+  entryCount: number;
+}
+
 export function ParticipantManager({
   auction,
+  savedLists,
   canUpdate,
 }: {
   auction: { id: string; code: string; title: string; status: string; restricted: boolean };
+  /** Reusable rosters from Content → Participant lists. */
+  savedLists: SavedListOption[];
   canUpdate: boolean;
 }) {
   const router = useRouter();
@@ -94,6 +115,10 @@ export function ParticipantManager({
   const [paste, setPaste] = useState('');
   const [result, setResult] = useState<ImportResult | null>(null);
   const [clearOpen, setClearOpen] = useState(false);
+  const [sourceList, setSourceList] = useState<SourceList | null>(null);
+  const [pickedList, setPickedList] = useState('');
+
+  const usableLists = savedLists.filter((list) => list.entryCount > 0);
 
   const locked = auction.status === 'SETTLED' || auction.status === 'CANCELLED';
   const editable = canUpdate && !locked;
@@ -118,6 +143,7 @@ export function ParticipantManager({
       setMatchTotal(data.total ?? 0);
       setUnlisted(data.unlistedBidders ?? 0);
       setRestricted(Boolean(data.restricted));
+      setSourceList(data.sourceList ?? null);
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Load failed', description: error?.message });
     } finally {
@@ -204,6 +230,44 @@ export function ParticipantManager({
 
       toast({ title: `${data.added} participant(s) added` });
       setPaste('');
+      afterChange(data);
+    } catch {
+      toast({ variant: 'destructive', title: 'Network error' });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /**
+   * Copies a saved roster onto this auction.
+   *
+   * A re-sync is always a replace: the point of it is that the auction should
+   * end up matching the saved list, and merging would leave a roster that is
+   * neither the old copy nor the new list.
+   */
+  const attachList = async (listId: string, mode: 'replace' | 'append') => {
+    if (!listId || !editable) return;
+
+    setBusy('attach');
+    try {
+      const response = await fetch(`/api/admin/auctions/${auction.id}/participants`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listId, mode }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setResult(null);
+        toast({ variant: 'destructive', title: 'Could not attach the list', description: data?.error });
+        return;
+      }
+
+      toast({
+        title: `"${data.listName}" applied`,
+        description: `${data.total?.toLocaleString() ?? 0} invited participant(s) on #${auction.code}.`,
+      });
+      setPickedList('');
       afterChange(data);
     } catch {
       toast({ variant: 'destructive', title: 'Network error' });
@@ -299,10 +363,97 @@ export function ParticipantManager({
           </Alert>
         )}
 
+        {sourceList && (
+          <Alert variant={sourceList.stale ? 'destructive' : 'default'}>
+            <ListChecks className="h-4 w-4" />
+            <AlertDescription className="space-y-2 text-xs">
+              <p>
+                This list was copied from the saved list{' '}
+                <strong>&quot;{sourceList.name}&quot;</strong>
+                {sourceList.syncedAt && (
+                  <> on {new Date(sourceList.syncedAt).toLocaleDateString('en-GB')}</>
+                )}
+                .{' '}
+                {sourceList.stale
+                  ? `The saved list has changed since — it now holds ${sourceList.entryCount.toLocaleString()} number(s). This auction is unaffected until you re-sync.`
+                  : 'It matches the saved list as of that copy.'}
+              </p>
+              {editable && sourceList.stale && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy !== null}
+                  onClick={() => attachList(sourceList.id, 'replace')}
+                >
+                  {busy === 'attach' ? (
+                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-1.5 h-4 w-4" />
+                  )}
+                  Replace with the current &quot;{sourceList.name}&quot;
+                </Button>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {editable && usableLists.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Use a saved list</CardTitle>
+              <CardDescription>
+                Rosters uploaded once under{' '}
+                <Link href="/admin/content" className="underline">
+                  Content → Participant lists
+                </Link>
+                . Attaching copies the numbers onto this auction, so editing the saved list later
+                never changes who can bid here.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <select
+                value={pickedList}
+                onChange={(event) => setPickedList(event.target.value)}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Select a saved list…</option>
+                {usableLists.map((list) => (
+                  <option key={list.id} value={list.id}>
+                    {list.name} — {list.entryCount.toLocaleString()} number(s)
+                  </option>
+                ))}
+              </select>
+
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!pickedList || busy !== null}
+                  onClick={() => attachList(pickedList, 'append')}
+                >
+                  {busy === 'attach' && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+                  Add to this list
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={!pickedList || busy !== null}
+                  onClick={() => attachList(pickedList, 'replace')}
+                >
+                  {busy === 'attach' && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+                  {listTotal > 0 ? `Replace all ${listTotal.toLocaleString()}` : 'Use this list'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {editable && (
           <Card>
             <CardHeader>
-              <CardTitle>Upload a list</CardTitle>
+              <CardTitle>Upload a one-off list</CardTitle>
               <CardDescription>
                 A CSV, text or Excel file. The first column is the phone number; optional{' '}
                 <code className="rounded bg-secondary px-1">name</code> and{' '}

@@ -1,6 +1,6 @@
 import prisma from './prisma';
 import { getSettings } from './settings';
-import { syncAuctionLifecycle } from './auction-engine';
+import { touchAuctionLifecycle } from './maintenance';
 import { carriedBidsRemaining, reauctionEligibility } from './reauction';
 import { participantEligibility } from './eligibility';
 import { firstImage, toNum } from './format';
@@ -110,7 +110,7 @@ export interface BrowseOptions {
 }
 
 export async function browseAuctions(options: BrowseOptions = {}) {
-  await syncAuctionLifecycle();
+  await touchAuctionLifecycle();
   const settings = await getSettings();
   const take = Math.min(60, options.take ?? 24);
 
@@ -152,7 +152,7 @@ export async function browseAuctions(options: BrowseOptions = {}) {
 }
 
 export async function getHomeData() {
-  await syncAuctionLifecycle();
+  await touchAuctionLifecycle();
   const settings = await getSettings();
   const endingSoonHours = Number(settings['bidding.endingSoonHours']) || 24;
 
@@ -237,7 +237,7 @@ export async function getPlatformStats() {
 
 /** Auction detail by public code, with a best-effort view counter bump. */
 export async function getAuctionByCode(code: string) {
-  await syncAuctionLifecycle();
+  await touchAuctionLifecycle();
   const settings = await getSettings();
 
   const auction = await prisma.auction.findUnique({

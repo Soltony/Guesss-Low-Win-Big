@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { AlertCircle, Info, Loader2, Lock } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,12 @@ interface TermsOption {
   title: string;
   version: string;
   active: boolean;
+}
+
+export interface ParticipantListOption {
+  id: string;
+  name: string;
+  entryCount: number;
 }
 
 export interface AuctionDefaults {
@@ -80,6 +87,7 @@ export function AuctionForm({
   mode,
   items,
   terms,
+  participantLists = [],
   defaults,
   initial,
   economicsLocked = false,
@@ -87,6 +95,8 @@ export function AuctionForm({
   mode: 'create' | 'edit';
   items: ItemOption[];
   terms: TermsOption[];
+  /** Saved rosters from Content, offered when the auction is invited-only. */
+  participantLists?: ParticipantListOption[];
   defaults: AuctionDefaults;
   initial?: Partial<AuctionFormValues>;
   economicsLocked?: boolean;
@@ -96,11 +106,14 @@ export function AuctionForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // A participant list needs an auction to attach to, so this only records the
-  // intent: the draft is created first, then the operator is taken straight to
-  // the page that uploads the list. Importing it there is what actually
-  // switches the auction to invited-only.
+  // Who may bid. Picking a saved roster restricts the auction as part of this
+  // save, because the numbers already exist and can simply be copied onto the
+  // new draft. Leaving the roster on "upload a new list" keeps the older route:
+  // the draft is created open, and the operator is taken straight to the page
+  // that uploads a list, which is what switches it to invited-only.
   const [restricted, setRestricted] = useState(false);
+  const [participantListId, setParticipantListId] = useState('');
+  const usableLists = participantLists.filter((list) => list.entryCount > 0);
 
   const now = new Date();
   const [form, setForm] = useState<AuctionFormValues>({
@@ -154,6 +167,8 @@ export function AuctionForm({
     setSaving(true);
     setError(null);
 
+    const attachList = mode === 'create' && restricted ? participantListId : '';
+
     const payload = {
       ...form,
       startAt: new Date(form.startAt).toISOString(),
@@ -161,6 +176,7 @@ export function AuctionForm({
       termsId: form.termsId || null,
       titleAm: form.titleAm || null,
       subtitle: form.subtitle || null,
+      ...(attachList ? { participantListId: attachList } : {}),
     };
 
     try {
@@ -180,15 +196,24 @@ export function AuctionForm({
       }
 
       const auctionId = data.id ?? initial?.id;
-      const uploadNext = mode === 'create' && restricted;
+      // Only send the operator off to the upload page when there is still a
+      // list to supply — a saved roster has already been copied on by now.
+      const uploadNext = mode === 'create' && restricted && !data.participants;
 
       toast({
         title: mode === 'create' ? 'Auction created' : 'Auction updated',
-        description: uploadNext
-          ? 'Upload the invited list to restrict who can bid — until you do, the auction is open to everyone and cannot be published.'
-          : undefined,
+        variant: data.participantsError ? 'destructive' : undefined,
+        description: data.participantsError
+          ? `The auction was created, but the list could not be attached: ${data.participantsError}`
+          : data.participants
+            ? `Restricted to "${data.participants.listName}" — ${data.participants.total.toLocaleString()} invited participant(s).`
+            : uploadNext
+              ? 'Upload the invited list to restrict who can bid — until you do, the auction is open to everyone and cannot be published.'
+              : undefined,
       });
-      router.push(`/admin/auctions/${auctionId}${uploadNext ? '/participants' : ''}`);
+      router.push(
+        `/admin/auctions/${auctionId}${uploadNext || data.participantsError ? '/participants' : ''}`
+      );
       router.refresh();
     } catch {
       setError('Network error. Please try again.');
@@ -547,14 +572,47 @@ export function AuctionForm({
               </div>
 
               {restricted && (
-                <Alert>
-                  <Lock className="h-4 w-4" />
-                  <AlertDescription className="text-xs">
-                    Saving takes you straight to the upload page for this auction — a list can only
-                    be attached once the draft exists. The auction stays open to everyone, and
-                    cannot be published, until the list is in.
-                  </AlertDescription>
-                </Alert>
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="participantListId">Eligible participants</Label>
+                    <select
+                      id="participantListId"
+                      value={participantListId}
+                      onChange={(event) => setParticipantListId(event.target.value)}
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="">Upload a new list after saving…</option>
+                      {usableLists.map((list) => (
+                        <option key={list.id} value={list.id}>
+                          {list.name} — {list.entryCount.toLocaleString()} number(s)
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-muted-foreground">
+                      Saved lists come from{' '}
+                      <Link href="/admin/content" className="underline">
+                        Content → Participant lists
+                      </Link>
+                      . Pick one instead of uploading the same numbers again.
+                    </p>
+                  </div>
+
+                  <Alert>
+                    <Lock className="h-4 w-4" />
+                    <AlertDescription className="text-xs">
+                      {participantListId
+                        ? 'The saved list is copied onto this auction when you save, and it becomes invited-only straight away. The copy is its own roster from then on — editing the saved list later will not change who can bid here, but the auction will offer you a re-sync.'
+                        : 'Saving takes you straight to the upload page for this auction — a list can only be attached once the draft exists. The auction stays open to everyone, and cannot be published, until the list is in.'}
+                    </AlertDescription>
+                  </Alert>
+
+                  {usableLists.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      No saved lists with numbers on them yet — upload one under Content to reuse it
+                      across auctions.
+                    </p>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>

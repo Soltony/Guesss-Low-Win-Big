@@ -6,6 +6,7 @@ import { getCurrentUser } from '@/lib/session';
 import { hasPermission } from '@/lib/permissions';
 import { getSettings } from '@/lib/settings';
 import { reauctionDefaults } from '@/lib/reauction';
+import { listSummaries } from '@/lib/participant-lists';
 import { toNum } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -15,7 +16,7 @@ export default async function NewAuctionPage() {
   const user = await getCurrentUser({ allowRefresh: false });
   if (!hasPermission(user, 'auctions', 'create')) redirect('/admin/no-access');
 
-  const [items, terms, settings] = await Promise.all([
+  const [items, terms, participantLists, settings] = await Promise.all([
     prisma.item.findMany({
       where: { status: 'ACTIVE' },
       orderBy: { name: 'asc' },
@@ -30,6 +31,9 @@ export default async function NewAuctionPage() {
       orderBy: { createdAt: 'desc' },
       select: { id: true, title: true, version: true, active: true },
     }),
+    // Archived lists stay attached to the auctions that already used them, but
+    // are not offered for a new one.
+    listSummaries({ activeOnly: true }),
     getSettings(),
   ]);
 
@@ -49,6 +53,11 @@ export default async function NewAuctionPage() {
           categoryName: item.category.name,
         }))}
         terms={terms}
+        participantLists={participantLists.map((list) => ({
+          id: list.id,
+          name: list.name,
+          entryCount: list.entryCount,
+        }))}
         defaults={{
           bidFee: Number(settings['bidding.defaultBidFee']),
           minBidAmount: Number(settings['bidding.defaultMinBid']),

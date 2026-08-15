@@ -43,6 +43,7 @@ model User {
   updatedSettings    SystemSetting[]      @relation("SettingUpdatedBy")
   moderatedBidders   Bidder[]             @relation("BidderModeratedBy")
   addedParticipants  AuctionParticipant[] @relation("ParticipantAddedBy")
+  createdLists       ParticipantList[]    @relation("ListCreatedBy")
 
   @@index([roleId])
 }
@@ -241,6 +242,15 @@ model Auction {
   termsId String?
   terms   TermsAndConditions? @relation(fields: [termsId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
+  // Which saved roster this auction's participant list was copied from, if any.
+  // Provenance only: the rows in `participants` are a snapshot taken at attach
+  // time, so editing the saved list never changes who may bid on an auction
+  // that is already running. `participantsSyncedAt` records when that snapshot
+  // was taken, which is what "the list has changed since" is measured against.
+  sourceListId         String?
+  sourceList           ParticipantList? @relation(fields: [sourceListId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  participantsSyncedAt DateTime?
+
   winnerBidId     String?
   settledAt       DateTime?
   settledById     String?
@@ -294,8 +304,54 @@ model Auction {
   @@index([createdById])
   @@index([settledById])
   @@index([termsId])
+  @@index([sourceListId])
   @@index([parentAuctionId])
   @@index([originalAuctionId])
+}
+
+// A reusable roster of phone numbers — staff, a loyalty tier, one branch's
+// customers — uploaded once under Content and attached to any number of
+// auctions, exactly as a terms version is.
+//
+// Attaching copies the entries into `AuctionParticipant` rather than leaving
+// the auction pointing here, because the two have different lifetimes: a saved
+// list is edited whenever staff join or leave, while a running auction's roster
+// must not change under the people bidding in it. See `applyListToAuction` in
+// src/lib/participant-lists.ts.
+model ParticipantList {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  // An archived list stays attached to the auctions that already used it, but
+  // is no longer offered when setting up a new one.
+  active      Boolean @default(true)
+
+  createdById String?
+  createdBy   User?    @relation("ListCreatedBy", fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  entries  ParticipantListEntry[]
+  auctions Auction[]
+
+  @@index([active])
+  @@index([createdById])
+}
+
+// One phone number on a saved list. Mirrors AuctionParticipant's shape so a
+// copy in either direction is a straight field-for-field map.
+model ParticipantListEntry {
+  id          String          @id @default(cuid())
+  listId      String
+  list        ParticipantList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  phoneNumber String
+  fullName    String?
+  note        String?
+  createdAt   DateTime        @default(now())
+
+  @@unique([listId, phoneNumber])
+  @@index([listId])
+  @@index([phoneNumber])
 }
 
 // One approved participant on a RESTRICTED auction.
@@ -312,7 +368,7 @@ model AuctionParticipant {
   phoneNumber String
   fullName    String?
   note        String?
-  source      String  @default("UPLOAD") // UPLOAD | MANUAL | INHERITED
+  source      String  @default("UPLOAD") // UPLOAD | MANUAL | INHERITED | LIST
 
   addedById String?
   addedBy   User?    @relation("ParticipantAddedBy", fields: [addedById], references: [id], onDelete: NoAction, onUpdate: NoAction)

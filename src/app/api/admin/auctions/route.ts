@@ -5,6 +5,7 @@ import { createAuditLog } from '@/lib/audit-log';
 import { getSettings } from '@/lib/settings';
 import { parseReauctionConfig, reauctionDefaults } from '@/lib/reauction';
 import { round2, toNum } from '@/lib/format';
+import { applyListToAuction, ParticipantListError } from '@/lib/participant-lists';
 
 export const dynamic = 'force-dynamic';
 
@@ -195,5 +196,35 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  return NextResponse.json({ id: auction.id, code: auction.code }, { status: 201 });
+  // A saved participant list picked on the form is applied now, so an operator
+  // who wanted an invited-only auction gets one in a single save rather than
+  // being sent off to a second page to upload the same numbers again. A failure
+  // here is reported but does not undo the auction: the draft is real and its
+  // list can still be attached by hand.
+  let participants: { listName: string; total: number } | undefined;
+  let participantsError: string | undefined;
+
+  if (body.participantListId) {
+    try {
+      const applied = await applyListToAuction({
+        auctionId: auction.id,
+        listId: String(body.participantListId),
+        mode: 'replace',
+        actor: { id: user.id, fullName: user.fullName },
+      });
+      await prisma.auction.update({
+        where: { id: auction.id },
+        data: { eligibilityMode: 'RESTRICTED' },
+      });
+      participants = { listName: applied.listName, total: applied.total };
+    } catch (error) {
+      if (error instanceof ParticipantListError) participantsError = error.message;
+      else throw error;
+    }
+  }
+
+  return NextResponse.json(
+    { id: auction.id, code: auction.code, participants, participantsError },
+    { status: 201 }
+  );
 }

@@ -10,7 +10,8 @@ import { AuctionActions } from '@/components/admin/auction-actions';
 import { Button } from '@/components/ui/button';
 import { getCurrentUser } from '@/lib/session';
 import { hasPermission } from '@/lib/permissions';
-import { syncAuctionLifecycle, rankUniqueBids } from '@/lib/auction-engine';
+import { rankUniqueBids } from '@/lib/auction-engine';
+import { touchAuctionLifecycle } from '@/lib/maintenance';
 import { lineageRounds } from '@/lib/reauction';
 import { isRestricted, participantCount, unlistedBidderCount } from '@/lib/eligibility';
 import { maskPhone, toNum } from '@/lib/format';
@@ -31,7 +32,7 @@ export default async function AdminAuctionDetail({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await syncAuctionLifecycle();
+  await touchAuctionLifecycle();
   const { id } = await params;
 
   const [auction, user] = await Promise.all([

@@ -6,6 +6,7 @@ import { StatusBadge } from '@/components/admin/status-badge';
 import { getCurrentUser } from '@/lib/session';
 import { hasPermission } from '@/lib/permissions';
 import { isRestricted } from '@/lib/eligibility';
+import { listSummaries } from '@/lib/participant-lists';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,12 +26,13 @@ export default async function AuctionParticipantsPage({
 }) {
   const { id } = await params;
 
-  const [auction, user] = await Promise.all([
+  const [auction, user, savedLists] = await Promise.all([
     prisma.auction.findUnique({
       where: { id },
       select: { id: true, code: true, title: true, status: true, eligibilityMode: true },
     }),
     getCurrentUser({ allowRefresh: false }),
+    listSummaries({ activeOnly: true }),
   ]);
 
   if (!auction) notFound();
@@ -56,6 +58,11 @@ export default async function AuctionParticipantsPage({
           status: auction.status,
           restricted: isRestricted(auction),
         }}
+        savedLists={savedLists.map((list) => ({
+          id: list.id,
+          name: list.name,
+          entryCount: list.entryCount,
+        }))}
         canUpdate={hasPermission(user, 'auctions', 'update')}
       />
     </>

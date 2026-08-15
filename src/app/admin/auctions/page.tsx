@@ -7,7 +7,7 @@ import { EmptyRow, FilterBar, Pager, TableCard } from '@/components/admin/data-s
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { syncAuctionLifecycle } from '@/lib/auction-engine';
+import { touchAuctionLifecycle } from '@/lib/maintenance';
 import { getCurrentUser } from '@/lib/session';
 import { hasPermission } from '@/lib/permissions';
 import { toNum } from '@/lib/format';
@@ -23,7 +23,7 @@ export default async function AuctionsPage({
 }: {
   searchParams: Promise<{ status?: string; q?: string; page?: string }>;
 }) {
-  await syncAuctionLifecycle();
+  await touchAuctionLifecycle();
   const params = await searchParams;
   const user = await getCurrentUser({ allowRefresh: false });
 

@@ -16,7 +16,7 @@ import { StatusBadge } from '@/components/admin/status-badge';
 import { TableCard } from '@/components/admin/data-shell';
 import { ActivityChart } from '@/components/admin/activity-chart';
 import { getDailyActivity, getDashboardMetrics, getTopAuctions } from '@/lib/dashboard-metrics';
-import { syncAuctionLifecycle } from '@/lib/auction-engine';
+import { touchAuctionLifecycle } from '@/lib/maintenance';
 import { getCurrentUser } from '@/lib/session';
 import { hasPermission } from '@/lib/permissions';
 import { isTestLoginEnabled } from '@/lib/test-login';
@@ -25,7 +25,7 @@ export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Dashboard' };
 
 export default async function AdminDashboard() {
-  await syncAuctionLifecycle();
+  await touchAuctionLifecycle();
 
   const [user, metrics, activity, topAuctions] = await Promise.all([
     getCurrentUser({ allowRefresh: false }),

@@ -5,27 +5,29 @@ import {
   clearParticipants,
   importParticipants,
   isRestricted,
-  parseParticipantText,
-  readParticipantFile,
   unlistedBidderCount,
-  type ParsedList,
 } from '@/lib/eligibility';
+import {
+  applyListToAuction,
+  attachedList,
+  MAX_LIST_ENTRIES,
+  ParticipantListError,
+} from '@/lib/participant-lists';
+import {
+  emptyParseError,
+  isUploadFailure,
+  readParticipantUpload,
+  toParticipantCsv,
+} from '@/lib/participant-upload';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-
-/** Uploads are lists of phone numbers, so a few hundred KB is already generous. */
-const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
-/** Guards against an operator pasting an entire customer database by mistake. */
-const MAX_ENTRIES = 50_000;
-
-const ACCEPTED_EXTENSIONS = ['.csv', '.txt', '.tsv', '.xlsx', '.xlsm'];
 
 /**
  * The invited-participant list for one auction.
  *
  * GET    — page through the list, or export it as CSV with `?format=csv`
- * POST   — import a file or a pasted list, replacing or appending
+ * POST   — import a file, a pasted list, or a saved list from Content
  * DELETE — clear the list
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -35,7 +37,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params;
   const auction = await prisma.auction.findUnique({
     where: { id },
-    select: { id: true, code: true, title: true, eligibilityMode: true },
+    select: {
+      id: true,
+      code: true,
+      title: true,
+      eligibilityMode: true,
+      sourceListId: true,
+      participantsSyncedAt: true,
+    },
   });
   if (!auction) return jsonError('Auction not found', 404);
 
@@ -60,15 +69,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       select: { phoneNumber: true, fullName: true, note: true },
     });
 
-    const csv = [
-      'phone,name,note',
-      ...all.map((row) =>
-        [row.phoneNumber, row.fullName ?? '', row.note ?? ''].map(csvCell).join(',')
-      ),
-      '',
-    ].join('\r\n');
-
-    return new NextResponse(csv, {
+    return new NextResponse(toParticipantCsv(all), {
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',
         'Content-Disposition': `attachment; filename="participants-${auction.code}.csv"`,
@@ -78,7 +79,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const { skip, take, page, pageSize } = parsePaging(req, 50);
 
-  const [rows, total, listTotal, unlisted] = await Promise.all([
+  const [rows, total, listTotal, unlisted, sourceList] = await Promise.all([
     prisma.auctionParticipant.findMany({
       where,
       orderBy: { createdAt: 'asc' },
@@ -89,6 +90,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     prisma.auctionParticipant.count({ where }),
     prisma.auctionParticipant.count({ where: { auctionId: id } }),
     unlistedBidderCount(auction),
+    attachedList(auction),
   ]);
 
   // Whether each invitee has actually turned up, resolved by phone rather than
@@ -121,6 +123,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     listTotal,
     restricted: isRestricted(auction),
     unlistedBidders: unlisted,
+    sourceList,
     participants: rows.map((row) => {
       const bidder = byPhone.get(row.phoneNumber);
       return {
@@ -159,83 +162,50 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     );
   }
 
-  let parsed: ParsedList;
-  let mode: 'replace' | 'append' = 'append';
-  let source = 'UPLOAD';
-
+  const actor = { id: user.id, fullName: user.fullName };
   const contentType = req.headers.get('content-type') || '';
 
-  if (contentType.includes('multipart/form-data')) {
-    let form: FormData;
-    try {
-      form = await req.formData();
-    } catch {
-      return jsonError('Could not read the uploaded file.', 400);
-    }
+  // Attaching a saved list from Content. Handled before the upload reader
+  // because there is no file to read — the numbers are already in the database,
+  // and copying them is what keeps this auction's roster independent of later
+  // edits to that list.
+  if (!contentType.includes('multipart/form-data')) {
+    const preview = (await req.clone().json().catch(() => ({}))) as Record<string, unknown>;
 
-    const file = form.get('file');
-    if (!file || typeof file === 'string') return jsonError('No file was supplied.', 400);
-    if (file.size === 0) return jsonError('The selected file is empty.', 400);
-    if (file.size > MAX_UPLOAD_BYTES) {
-      return jsonError(
-        `The file is ${(file.size / 1024 / 1024).toFixed(1)} MB. The limit is ${
-          MAX_UPLOAD_BYTES / 1024 / 1024
-        } MB.`,
-        413
-      );
-    }
+    if (typeof preview.listId === 'string' && preview.listId) {
+      try {
+        const applied = await applyListToAuction({
+          auctionId: id,
+          listId: preview.listId,
+          mode: preview.mode === 'replace' ? 'replace' : 'append',
+          actor,
+        });
 
-    const name = 'name' in file ? String(file.name).toLowerCase() : '';
-    if (!ACCEPTED_EXTENSIONS.some((extension) => name.endsWith(extension))) {
-      return jsonError('Upload a .csv, .txt or .xlsx file.', 415);
-    }
-
-    if (form.get('mode') === 'replace') mode = 'replace';
-
-    try {
-      parsed = await readParticipantFile(file);
-    } catch (error) {
-      console.error('[participants] parse failed', error);
-      return jsonError('The file could not be read. Save it as CSV and try again.', 400);
-    }
-  } else {
-    const body = await req.json().catch(() => ({}) as Record<string, unknown>);
-    if (body.mode === 'replace') mode = 'replace';
-    source = 'MANUAL';
-
-    if (typeof body.text === 'string') {
-      parsed = parseParticipantText(body.text);
-    } else if (Array.isArray(body.entries)) {
-      // Entries arrive as raw rows and go through the same parser, so a number
-      // typed into the admin is normalised exactly like an uploaded one.
-      parsed = parseParticipantText(
-        body.entries
-          .map((entry: unknown) => {
-            if (typeof entry === 'string') return entry;
-            const row = entry as { phoneNumber?: string; phone?: string; fullName?: string; note?: string };
-            return [row.phoneNumber ?? row.phone ?? '', row.fullName ?? '', row.note ?? '']
-              .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
-              .join(',');
-          })
-          .join('\n')
-      );
-    } else {
-      return jsonError('Supply a file, a list of numbers, or entries to add.', 400);
+        return NextResponse.json({
+          ok: true,
+          restricted: await restrictAfterImport(auction, applied.total),
+          ...applied,
+          rejected: [],
+          rejectedTotal: 0,
+        });
+      } catch (error) {
+        if (error instanceof ParticipantListError) return jsonError(error.message, error.status);
+        throw error;
+      }
     }
   }
+
+  const upload = await readParticipantUpload(req);
+  if (isUploadFailure(upload)) return jsonError(upload.error, upload.status);
+  const { parsed, mode, source } = upload;
 
   if (parsed.entries.length === 0) {
-    return jsonError(
-      parsed.rejected.length > 0
-        ? `No usable phone numbers were found — ${parsed.rejected.length} row(s) could not be read.`
-        : 'No phone numbers were found in what you supplied.',
-      400,
-      { rejected: parsed.rejected.slice(0, 20) }
-    );
+    const failure = emptyParseError(parsed);
+    return jsonError(failure.error, failure.status, { rejected: failure.rejected });
   }
-  if (parsed.entries.length > MAX_ENTRIES) {
+  if (parsed.entries.length > MAX_LIST_ENTRIES) {
     return jsonError(
-      `That list holds ${parsed.entries.length.toLocaleString()} numbers. The limit is ${MAX_ENTRIES.toLocaleString()} per auction.`,
+      `That list holds ${parsed.entries.length.toLocaleString()} numbers. The limit is ${MAX_LIST_ENTRIES.toLocaleString()} per auction.`,
       413
     );
   }
@@ -245,26 +215,47 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     entries: parsed.entries,
     mode,
     source,
-    actor: { id: user.id, fullName: user.fullName },
+    actor,
     parsed,
   });
 
-  // An uploaded list is only meaningful once the auction is actually
-  // restricted; switching it on here is what the operator meant by uploading.
-  let restricted = isRestricted(auction);
-  if (!restricted && summary.total > 0) {
-    await prisma.auction.update({ where: { id }, data: { eligibilityMode: 'RESTRICTED' } });
-    restricted = true;
+  // Replacing the roster from a file makes it a snapshot of nothing in
+  // particular, so the auction stops claiming to come from a saved list.
+  // Appending leaves the claim intact: the roster is still that list, plus
+  // whoever was added on top of it.
+  if (mode === 'replace') {
+    await prisma.auction.update({
+      where: { id },
+      data: { sourceListId: null, participantsSyncedAt: null },
+    });
   }
 
   return NextResponse.json({
     ok: true,
-    restricted,
+    restricted: await restrictAfterImport(auction, summary.total),
     ...summary,
     // Only the first few are worth showing; the rest would fill the screen.
     rejected: summary.rejected.slice(0, 20),
     rejectedTotal: summary.rejected.length,
   });
+}
+
+/**
+ * A list is only meaningful once the auction is actually restricted; switching
+ * it on after a successful import is what the operator meant by supplying one.
+ */
+async function restrictAfterImport(
+  auction: { id: string; eligibilityMode: string },
+  total: number
+): Promise<boolean> {
+  if (isRestricted(auction)) return true;
+  if (total === 0) return false;
+
+  await prisma.auction.update({
+    where: { id: auction.id },
+    data: { eligibilityMode: 'RESTRICTED' },
+  });
+  return true;
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -288,13 +279,12 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const removed = await clearParticipants(id, { id: user.id, fullName: user.fullName });
 
   // An empty list on a restricted auction would turn everyone away, which is
-  // never what clearing it means — clearing is how you reopen an auction.
-  await prisma.auction.update({ where: { id }, data: { eligibilityMode: 'OPEN' } });
+  // never what clearing it means — clearing is how you reopen an auction. The
+  // saved-list link goes with it: there is no longer a roster for it to explain.
+  await prisma.auction.update({
+    where: { id },
+    data: { eligibilityMode: 'OPEN', sourceListId: null, participantsSyncedAt: null },
+  });
 
   return NextResponse.json({ ok: true, removed, restricted: false });
-}
-
-/** Quotes a CSV field only when it has to be. */
-function csvCell(value: string): string {
-  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }

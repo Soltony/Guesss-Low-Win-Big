@@ -68,6 +68,10 @@ export const API_MODULE_MAP: Record<string, string> = {
   '/api/admin/items': 'items',
   '/api/admin/categories': 'categories',
   '/api/admin/content': 'content',
+  // Saved participant lists are managed on the Content page, so they share its
+  // module rather than introducing a permission every role would have to be
+  // re-granted.
+  '/api/admin/participant-lists': 'content',
   '/api/admin/bidders': 'bidders',
   '/api/admin/notifications': 'notifications',
   '/api/admin/approvals': 'approvals',

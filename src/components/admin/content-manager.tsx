@@ -14,6 +14,7 @@ import {
   Plus,
   ScrollText,
   Trash2,
+  Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +31,10 @@ import {
 import { StatusBadge } from '@/components/admin/status-badge';
 import { EmptyRow, TableCard } from '@/components/admin/data-shell';
 import { ImageUploader } from '@/components/admin/image-uploader';
+import {
+  ParticipantListManager,
+  type ParticipantListRow,
+} from '@/components/admin/participant-list-manager';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -130,6 +135,7 @@ export function ContentManager({
   adsEnabled,
   adsPerLogin,
   terms,
+  participantLists,
   logoUrl,
   canCreate,
   canUpdate,
@@ -142,6 +148,8 @@ export function ContentManager({
   adsEnabled: boolean;
   adsPerLogin: number;
   terms: TermsRow[];
+  /** Reusable rosters an invited-only auction can be built from. */
+  participantLists: ParticipantListRow[];
   /** `platform.logoUrl` — '' means the built-in mark is in use. */
   logoUrl: string;
   canCreate: boolean;
@@ -325,6 +333,10 @@ export function ContentManager({
           <TabsTrigger value="terms">
             <ScrollText className="mr-1.5 h-4 w-4" />
             Terms &amp; conditions
+          </TabsTrigger>
+          <TabsTrigger value="participant-lists">
+            <Users className="mr-1.5 h-4 w-4" />
+            Participant lists
           </TabsTrigger>
           <TabsTrigger value="branding">
             <Palette className="mr-1.5 h-4 w-4" />
@@ -684,6 +696,15 @@ export function ContentManager({
               </tbody>
             </table>
           </TableCard>
+        </TabsContent>
+
+        <TabsContent value="participant-lists" className="mt-4">
+          <ParticipantListManager
+            lists={participantLists}
+            canCreate={canCreate}
+            canUpdate={canUpdate}
+            canDelete={canDelete}
+          />
         </TabsContent>
 
         <TabsContent value="branding" className="mt-4">

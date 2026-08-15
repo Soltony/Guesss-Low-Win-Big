@@ -4,6 +4,7 @@ import { ContentManager } from '@/components/admin/content-manager';
 import { getCurrentUser } from '@/lib/session';
 import { hasPermission } from '@/lib/permissions';
 import { getSettings } from '@/lib/settings';
+import { listSummaries } from '@/lib/participant-lists';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Content' };
@@ -15,7 +16,7 @@ function toLocalInput(date: Date | null) {
 }
 
 export default async function ContentPage() {
-  const [user, banners, ads, terms, settings] = await Promise.all([
+  const [user, banners, ads, terms, participantLists, settings] = await Promise.all([
     getCurrentUser({ allowRefresh: false }),
     prisma.banner.findMany({ orderBy: { displayOrder: 'asc' } }),
     prisma.advertisement.findMany({ orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] }),
@@ -23,6 +24,7 @@ export default async function ContentPage() {
       orderBy: { createdAt: 'desc' },
       include: { _count: { select: { auctions: true } } },
     }),
+    listSummaries(),
     getSettings(),
   ]);
 
@@ -30,7 +32,7 @@ export default async function ContentPage() {
     <>
       <PageHeader
         title="Content"
-        description="Home-page banners, mini-app ad popups, the terms & conditions shown to bidders, and the app icon."
+        description="Home-page banners, mini-app ad popups, the terms & conditions and invited-participant lists used by auctions, and the app icon."
       />
       <ContentManager
         banners={banners.map((banner) => ({
@@ -75,6 +77,7 @@ export default async function ContentPage() {
           auctionCount: term._count.auctions,
           createdAt: term.createdAt.toISOString(),
         }))}
+        participantLists={participantLists}
         logoUrl={String(settings['platform.logoUrl'] ?? '')}
         canCreate={hasPermission(user, 'content', 'create')}
         canUpdate={hasPermission(user, 'content', 'update')}
