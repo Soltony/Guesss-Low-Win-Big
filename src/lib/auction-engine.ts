@@ -388,8 +388,13 @@ export async function autoSettleDueAuctions(): Promise<SettlementOutcome[]> {
   const graceMinutes = Number(settings['winners.settleGraceMinutes']) || 0;
   const cutoff = new Date(Date.now() - graceMinutes * 60 * 1000);
 
+  // LIVE and SCHEDULED are included alongside ENDED so a caller that skipped
+  // `syncAuctionLifecycle()` still settles an auction whose window has closed,
+  // rather than leaving it for whoever happens to sync it next. DRAFT and
+  // PENDING_APPROVAL are absent on purpose: an unpublished auction never ran,
+  // so there is nothing to settle. `settleAuction` re-checks `endAt` itself.
   const due = await prisma.auction.findMany({
-    where: { status: 'ENDED', endAt: { lte: cutoff } },
+    where: { status: { in: ['ENDED', 'LIVE', 'SCHEDULED'] }, endAt: { lte: cutoff } },
     select: { id: true },
     take: 50,
   });

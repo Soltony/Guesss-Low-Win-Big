@@ -296,20 +296,34 @@ the carried bids per bidder with how many are still unspent.
 
 ## The scheduled tick
 
-Point a cron job at this every minute:
+One pass — `runMaintenance()` in `src/lib/maintenance.ts` — advances
+`SCHEDULED → LIVE → ENDED`, voids unpaid bids past their timeout, auto-settles
+ended auctions past the grace period, opens re-auction rounds for the ones with
+no valid winner, notifies winners and carried-forward bidders, and sends
+"ending soon" reminders. Every step is idempotent — a missed or duplicated pass
+is harmless, and so is running two drivers at once.
 
-```bash
-curl -X POST -H "x-cron-secret: $CRON_SECRET" https://<host>/api/cron/tick
-```
+Three things drive it, deliberately overlapping:
 
-Each tick advances `SCHEDULED → LIVE → ENDED`, voids unpaid bids past their
-timeout, auto-settles ended auctions past the grace period, opens re-auction
-rounds for the ones with no valid winner, notifies winners and carried-forward
-bidders, and sends "ending soon" reminders. Every step is idempotent — a missed
-or duplicated tick is harmless.
+| Driver | How | When to use it |
+| --- | --- | --- |
+| **Cron** | `curl -X POST -H "x-cron-secret: $CRON_SECRET" https://<host>/api/cron/tick`, every minute | A platform scheduler is available |
+| **Worker** | `npm run run:worker` — own process, `WORKER_INTERVAL_SECONDS` (default 60) | Plain `next start`, no scheduler |
+| **Read paths** | Automatic. Every mini-app and admin auction read calls `touchAuctionLifecycle()` | Always on — the safety net |
 
-Lifecycle transitions also happen lazily on read, so the mini-app stays correct
-even if the cron job is down.
+The read-path driver awaits the lifecycle sync (the caller renders its result)
+and then runs the rest of the pass in the background, at most one at a time and
+at most once a minute per process. It exists because settlement used to depend
+*solely* on the cron: with nothing scheduled, auctions reached `ENDED` and
+stayed there — winners never picked, re-auctions never opened — while the admin
+dashboard counted them under "awaiting settlement". Awarding a prize the
+platform has already collected bid fees for must not require an external
+scheduler, so run the cron or the worker for punctuality, not for correctness.
+
+Only passes that changed something are written to the audit log as `CRON_TICK`;
+a once-a-minute pass with nothing to do would otherwise add ~1,400 empty rows a
+day. The HTTP response always carries the full summary either way, so cron
+monitoring still sees every tick.
 
 ---
 
@@ -479,7 +493,10 @@ Before launch:
 4. Set `ALLOWED_ORIGIN` to the real mini-app origin.
 5. Sign in as the seeded Super Admin, change the password, create real
    accounts, and disable the seed account.
-6. Schedule `/api/cron/tick` every minute with a strong `CRON_SECRET`.
+6. Schedule `/api/cron/tick` every minute with a strong `CRON_SECRET`, or run
+   `npm run run:worker` as a supervised process. Settlement falls back to the
+   read paths without either, but only while the app is being used — schedule
+   one so an auction that ends overnight settles overnight.
 7. Configure the SMS provider — until `SMS_API_URL` is set, messages are only
    logged.
 8. Use `prisma migrate` rather than `db push` once schema history matters.
