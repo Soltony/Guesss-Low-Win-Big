@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowRight, Flame, Gavel, Package, Sparkles, Trophy, Users } from 'lucide-react';
+import { ArrowRight, Flame, Gavel, Package, Trophy, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useLanguage } from './language-provider';
 import { AuctionCard } from './auction-card';
@@ -86,12 +86,7 @@ export function HomeView({
         <div className="gl-dots pointer-events-none absolute inset-0 opacity-70" />
 
         <div className="relative px-4">
-          <span className="gl-chip-dark">
-            <Sparkles className="h-3.5 w-3.5 text-primary" />
-            {t('app.platform')}
-          </span>
-
-          <h1 className="mt-4 text-[38px] font-extrabold leading-[1.05] tracking-tight">
+          <h1 className="text-[38px] font-extrabold leading-[1.05] tracking-tight">
             Guess <span className="text-primary">low</span>.
             <br />
             Win <span className="text-primary">big</span>.
