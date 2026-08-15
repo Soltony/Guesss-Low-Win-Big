@@ -83,6 +83,13 @@ export async function POST(req: NextRequest) {
 
   if (!auctionId) return jsonError('Auction is required.', 400);
   if (!Number.isFinite(amount)) return jsonError('Enter a valid bid amount.', 400);
+  // The bid form asks for this on every bid; the rule is repeated here so no
+  // bid can be registered — or a fee charged — without the acceptance.
+  if (body?.acceptedTerms !== true) {
+    return jsonError('You must accept the terms and conditions before placing a bid.', 400, {
+      code: 'TERMS_NOT_ACCEPTED',
+    });
+  }
 
   const meta = clientMeta(req);
 

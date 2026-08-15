@@ -2,12 +2,23 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CheckCircle2, Loader2, Minus, Plus, ShieldCheck, X, XCircle, Zap } from 'lucide-react';
+import * as Dialog from '@radix-ui/react-dialog';
+import {
+  CheckCircle2,
+  Loader2,
+  Minus,
+  Plus,
+  ScrollText,
+  ShieldCheck,
+  X,
+  XCircle,
+  Zap,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useLanguage } from './language-provider';
 import { round2 } from '@/lib/format';
-import type { PublicAuction } from '@/lib/miniapp-data';
+import type { PublicAuction, PublicTerms } from '@/lib/miniapp-data';
 
 type Phase = 'idle' | 'submitting' | 'awaiting-payment' | 'confirmed' | 'failed';
 
@@ -46,11 +57,17 @@ export function BidPanel({
   onClose,
   onBusyChange,
 }: Props) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const { toast } = useToast();
   const router = useRouter();
 
   const [amount, setAmount] = useState('');
+  // The terms step sits between the submit button and the bid: nothing is sent
+  // until the bidder has the terms in front of them and ticks the box.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [accepted, setAccepted] = useState(false);
+  const [terms, setTerms] = useState<PublicTerms | null>(null);
+  const [termsLoaded, setTermsLoaded] = useState(false);
   const [phase, setPhase] = useState<Phase>('idle');
   const [message, setMessage] = useState<string | null>(null);
   // The field is cleared on success so the next bid starts blank, so the amount
@@ -160,7 +177,31 @@ export function BidPanel({
     [router]
   );
 
-  const submit = async () => {
+  /** Loaded once per panel, the first time the confirmation is opened. */
+  const loadTerms = useCallback(async () => {
+    if (termsLoaded) return;
+    try {
+      const response = await fetch(`/api/miniapp/terms?auctionId=${auction.id}`, {
+        cache: 'no-store',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setTerms(data.terms ?? null);
+      }
+    } catch {
+      // Left unset: the dialog falls back to the short notice, and the
+      // acceptance step still has to be cleared either way.
+    } finally {
+      setTermsLoaded(true);
+    }
+  }, [auction.id, termsLoaded]);
+
+  /**
+   * The submit button now opens the terms step instead of placing the bid.
+   * Everything that would reject the bid outright is still checked here, so the
+   * bidder is not asked to accept terms for a bid that was never going to land.
+   */
+  const requestSubmit = () => {
     if (!connected) {
       toast({
         variant: 'destructive',
@@ -181,6 +222,13 @@ export function BidPanel({
       return;
     }
 
+    // Acceptance is per bid, never carried over from the last one.
+    setAccepted(false);
+    setConfirmOpen(true);
+    void loadTerms();
+  };
+
+  const submit = async (value: number) => {
     setPhase('submitting');
     setMessage(null);
 
@@ -188,7 +236,7 @@ export function BidPanel({
       const response = await fetch('/api/miniapp/bids', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ auctionId: auction.id, amount: value }),
+        body: JSON.stringify({ auctionId: auction.id, amount: value, acceptedTerms: true }),
       });
       const data = await response.json();
 
@@ -222,6 +270,18 @@ export function BidPanel({
       setMessage('Network error. Check your connection and try again.');
     }
   };
+
+  const confirmAndSubmit = () => {
+    if (!accepted) return;
+    const value = Number(amount);
+    if (!Number.isFinite(value)) return;
+    setConfirmOpen(false);
+    void submit(value);
+  };
+
+  const termsBody = terms
+    ? (lang === 'am' && terms.contentAm ? terms.contentAm : terms.contentEn)
+    : null;
 
   return (
     <div className={cn(compact ? 'border-t border-border' : 'gl-card overflow-hidden')}>
@@ -384,7 +444,7 @@ export function BidPanel({
 
         <button
           type="button"
-          onClick={submit}
+          onClick={requestSubmit}
           disabled={disabled || remaining === 0}
           className={cn(
             'gl-gold flex w-full items-center justify-center gap-2 rounded-xl px-4 font-bold',
@@ -443,6 +503,113 @@ export function BidPanel({
           {t('auction.terms')}
         </p>
       )}
+
+      {/* ---------- Terms acceptance ----------
+          Opened by the submit button; the bid is only sent from in here. The
+          panel itself can already be inside the bid sheet's dialog, so this one
+          layers above it. */}
+      <Dialog.Root open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-[70] flex max-h-[88dvh] w-[min(30rem,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-[0_24px_60px_-20px_hsl(224_47%_9%/0.6)] outline-none data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
+            <div className="flex shrink-0 items-start gap-3 border-b border-border px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <Dialog.Title className="text-sm font-bold leading-tight">
+                  {t('terms.confirmTitle')}
+                </Dialog.Title>
+                <Dialog.Description className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                  {t('terms.confirmIntro')}
+                </Dialog.Description>
+              </div>
+              <Dialog.Close
+                aria-label={t('common.close')}
+                className="shrink-0 rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </Dialog.Close>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
+              {/* The figure being committed to, read back before it is sent. */}
+              <div className="flex items-baseline justify-between gap-3 rounded-xl border border-border bg-secondary/40 px-3 py-2.5">
+                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {t('terms.yourBid')}
+                </span>
+                <span className="text-2xl font-extrabold leading-none tabular-nums">
+                  {(Number(amount) || 0).toFixed(2)}
+                  <span className="ml-1 text-xs font-semibold text-muted-foreground">
+                    {currency}
+                  </span>
+                </span>
+              </div>
+
+              <p className="mt-2 text-center text-[11px] leading-relaxed text-muted-foreground">
+                {nextIsFree
+                  ? t('bid.freeNotice')
+                  : t('bid.feeNotice', { fee: `${auction.bidFee.toFixed(2)} ${currency}` })}
+              </p>
+
+              <div className="mt-3 overflow-hidden rounded-xl border border-border">
+                <p className="flex items-center gap-1.5 border-b border-border bg-secondary/40 px-3 py-2 text-xs font-bold">
+                  <ScrollText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 truncate">{terms?.title || t('terms.title')}</span>
+                </p>
+                <div className="max-h-52 overflow-y-auto overscroll-contain px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+                  {!termsLoaded ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      {t('common.loading')}
+                    </span>
+                  ) : termsBody ? (
+                    <span className="whitespace-pre-line">{termsBody}</span>
+                  ) : (
+                    t('terms.unavailable')
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div
+              className="shrink-0 border-t border-border px-4 pt-3"
+              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)' }}
+            >
+              <label className="flex cursor-pointer items-start gap-2.5 text-xs font-medium leading-relaxed">
+                <input
+                  type="checkbox"
+                  checked={accepted}
+                  onChange={(event) => setAccepted(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                />
+                <span>{t('terms.accept')}</span>
+              </label>
+
+              <div className="mt-3 flex gap-2">
+                <Dialog.Close className="flex-1 rounded-xl border border-border py-3 text-sm font-semibold transition-colors hover:bg-secondary">
+                  {t('common.cancel')}
+                </Dialog.Close>
+                <button
+                  type="button"
+                  onClick={confirmAndSubmit}
+                  disabled={!accepted}
+                  className={cn(
+                    'gl-gold flex-[1.6] rounded-xl px-3 py-3 text-sm font-bold',
+                    !accepted && 'cursor-not-allowed opacity-50'
+                  )}
+                >
+                  {t('terms.confirmCta')}
+                </button>
+              </div>
+
+              {!accepted && (
+                <p className="mt-2 text-center text-[11px] leading-snug text-muted-foreground">
+                  {t('terms.acceptRequired')}
+                </p>
+              )}
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }

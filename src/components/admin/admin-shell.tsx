@@ -160,14 +160,6 @@ export function AdminShell({ children, user, items, pendingApprovals }: Props) {
 
           <div className="flex-1" />
 
-          <Link
-            href="/"
-            target="_blank"
-            className="hidden text-xs font-medium text-muted-foreground hover:text-foreground sm:block"
-          >
-            View mini-app ↗
-          </Link>
-
           <DropdownMenu>
             <DropdownMenuTrigger className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none transition hover:bg-secondary">
               <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">

@@ -275,6 +275,37 @@ export async function getAuctionByCode(code: string) {
   };
 }
 
+export interface PublicTerms {
+  title: string;
+  contentEn: string;
+  contentAm: string | null;
+}
+
+/**
+ * The terms a bid on this auction is placed under: the version attached to the
+ * auction when there is one, otherwise the platform's active version.
+ *
+ * The bid form has to show these before it will take a bid, and it is rendered
+ * from list cards too, where the auction was loaded without its terms.
+ */
+export async function getTermsForAuction(auctionId?: string): Promise<PublicTerms | null> {
+  const select = { title: true, contentEn: true, contentAm: true } as const;
+
+  if (auctionId) {
+    const auction = await prisma.auction.findUnique({
+      where: { id: auctionId },
+      select: { terms: { select } },
+    });
+    if (auction?.terms) return auction.terms;
+  }
+
+  return prisma.termsAndConditions.findFirst({
+    where: { active: true },
+    orderBy: { createdAt: 'desc' },
+    select,
+  });
+}
+
 function maskPhoneLocal(phone: string) {
   const digits = phone.replace(/\D/g, '');
   if (digits.length < 6) return '***';

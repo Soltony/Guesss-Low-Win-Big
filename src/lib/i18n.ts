@@ -74,6 +74,31 @@ const dictionary = {
     en: 'A service fee of {fee} is charged for each bid, paid from your wallet.',
     am: 'ለእያንዳንዱ ጨረታ {fee} የአገልግሎት ክፍያ ከኪስ ቦርሳዎ ይከፈላል።',
   },
+  'bid.freeNotice': {
+    en: 'This bid is covered by one you already paid for — no new fee is charged.',
+    am: 'ይህ ጨረታ ቀደም ብለው በከፈሉት ተሸፍኗል — አዲስ ክፍያ አይጠየቅም።',
+  },
+
+  'terms.title': { en: 'Terms and Conditions', am: 'የአጠቃቀም ውሎች' },
+  'terms.confirmTitle': { en: 'Confirm your bid', am: 'ጨረታዎን ያረጋግጡ' },
+  'terms.confirmIntro': {
+    en: 'Accept the terms and conditions to register this bid.',
+    am: 'ይህ ጨረታ እንዲመዘገብ የአጠቃቀም ውሎችን ይቀበሉ።',
+  },
+  'terms.yourBid': { en: 'Your bid', am: 'የእርስዎ ጨረታ' },
+  'terms.accept': {
+    en: 'I have read and accept the Terms and Conditions.',
+    am: 'የአጠቃቀም ውሎችን አንብቤ ተስማምቻለሁ።',
+  },
+  'terms.acceptRequired': {
+    en: 'Your bid is registered only after you accept the terms and conditions.',
+    am: 'ጨረታዎ የሚመዘገበው የአጠቃቀም ውሎችን ከተቀበሉ በኋላ ብቻ ነው።',
+  },
+  'terms.confirmCta': { en: 'Accept & place bid', am: 'ተስማምቼ ጨረታ አስገባ' },
+  'terms.unavailable': {
+    en: 'The platform terms and conditions apply to every bid you place. The full text is available on your profile page.',
+    am: 'የመድረኩ የአጠቃቀም ውሎች በሚያስገቡት እያንዳንዱ ጨረታ ላይ ተፈጻሚ ይሆናሉ። ሙሉ ጽሑፉ በመገለጫ ገጽዎ ላይ ይገኛል።',
+  },
 
   'wins.title': { en: 'My Wins', am: 'ያሸነፍኳቸው' },
   'wins.empty': { en: 'No wins yet — keep bidding!', am: 'እስካሁን ያሸነፉት የለም — መጫረትዎን ይቀጥሉ!' },

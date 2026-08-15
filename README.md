@@ -158,9 +158,9 @@ Bid fees are collected through the super-app wallet, exactly like loan
 repayment in the reference project.
 
 ```
-POST /api/miniapp/bids   { auctionId, amount }
+POST /api/miniapp/bids   { auctionId, amount, acceptedTerms: true }
    │
-   ├─ validate: maintenance off, auction LIVE, bidder ACTIVE,
+   ├─ validate: terms accepted, maintenance off, auction LIVE, bidder ACTIVE,
    │            amount within [min,max] and on the step grid,
    │            per-bidder cap, no repeat of your own amount, cooldown
    │
