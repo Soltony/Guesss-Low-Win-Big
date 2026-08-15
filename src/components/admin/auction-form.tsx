@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, Info, Loader2 } from 'lucide-react';
+import { AlertCircle, Info, Loader2, Lock } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -96,6 +96,12 @@ export function AuctionForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // A participant list needs an auction to attach to, so this only records the
+  // intent: the draft is created first, then the operator is taken straight to
+  // the page that uploads the list. Importing it there is what actually
+  // switches the auction to invited-only.
+  const [restricted, setRestricted] = useState(false);
+
   const now = new Date();
   const [form, setForm] = useState<AuctionFormValues>({
     itemId: initial?.itemId ?? '',
@@ -173,8 +179,16 @@ export function AuctionForm({
         return;
       }
 
-      toast({ title: mode === 'create' ? 'Auction created' : 'Auction updated' });
-      router.push(`/admin/auctions/${data.id ?? initial?.id}`);
+      const auctionId = data.id ?? initial?.id;
+      const uploadNext = mode === 'create' && restricted;
+
+      toast({
+        title: mode === 'create' ? 'Auction created' : 'Auction updated',
+        description: uploadNext
+          ? 'Upload the invited list to restrict who can bid — until you do, the auction is open to everyone and cannot be published.'
+          : undefined,
+      });
+      router.push(`/admin/auctions/${auctionId}${uploadNext ? '/participants' : ''}`);
       router.refresh();
     } catch {
       setError('Network error. Please try again.');
@@ -511,6 +525,41 @@ export function AuctionForm({
           </CardContent>
         </Card>
 
+        {mode === 'create' && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Participation</CardTitle>
+              <CardDescription>
+                Who is allowed to bid. An open auction is the norm; a restricted one admits only
+                the phone numbers you upload.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <Label htmlFor="restricted">Invited participants only</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Everyone still sees the auction in the app, but only the people on your list can
+                    place a bid.
+                  </p>
+                </div>
+                <Switch id="restricted" checked={restricted} onCheckedChange={setRestricted} />
+              </div>
+
+              {restricted && (
+                <Alert>
+                  <Lock className="h-4 w-4" />
+                  <AlertDescription className="text-xs">
+                    Saving takes you straight to the upload page for this auction — a list can only
+                    be attached once the draft exists. The auction stays open to everyone, and
+                    cannot be published, until the list is in.
+                  </AlertDescription>
+                </Alert>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardHeader>
             <CardTitle>Schedule</CardTitle>
@@ -634,7 +683,11 @@ export function AuctionForm({
 
         <Button type="submit" className="w-full" disabled={saving || items.length === 0}>
           {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {mode === 'create' ? 'Create draft' : 'Save changes'}
+          {mode === 'create'
+            ? restricted
+              ? 'Create draft & upload list'
+              : 'Create draft'
+            : 'Save changes'}
         </Button>
       </div>
     </form>
