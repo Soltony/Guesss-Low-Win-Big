@@ -5,6 +5,7 @@ import { ArrowRight, Flame, Gavel, Package, Sparkles, Trophy, Users } from 'luci
 import { cn } from '@/lib/utils';
 import { useLanguage } from './language-provider';
 import { AuctionCard } from './auction-card';
+import { BannerCarousel, type HomeBanner } from './banner-carousel';
 import { EmptyState, SectionHeading } from './section-heading';
 import { compactNumber } from '@/lib/format';
 import type { PublicAuction } from '@/lib/miniapp-data';
@@ -49,6 +50,7 @@ const STEPS = [
 
 export function HomeView({
   tagline,
+  banners,
   categories,
   featured,
   endingSoon,
@@ -60,6 +62,7 @@ export function HomeView({
   carriedBids = {},
 }: {
   tagline: string;
+  banners: HomeBanner[];
   categories: HomeCategory[];
   featured: PublicAuction[];
   endingSoon: PublicAuction[];
@@ -141,6 +144,9 @@ export function HomeView({
           ))}
         </dl>
       </section>
+
+      {/* ---------- Promotions ---------- */}
+      <BannerCarousel banners={banners} />
 
       {/* ---------- Categories ---------- */}
       {categories.length > 0 && (

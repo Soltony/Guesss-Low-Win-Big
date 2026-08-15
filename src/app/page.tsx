@@ -20,6 +20,7 @@ export default async function HomePage() {
     >
       <HomeView
         tagline={String(home.settings['platform.tagline'] || '')}
+        banners={home.banners}
         categories={home.categories}
         featured={home.featured}
         endingSoon={home.endingSoon}
