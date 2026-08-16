@@ -3,17 +3,23 @@ import prisma from '@/lib/prisma';
 import { isGuardFailure, jsonError, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
 import { isAdFrequency, parseAdSchedule, parseAdTimings } from '@/lib/ads';
+import { CONTENT_KIND_MODULES } from '@/lib/route-permissions';
 
 export const dynamic = 'force-dynamic';
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const guard = await requirePermission('content', 'update');
-  if (isGuardFailure(guard)) return guard.response;
-  const { user } = guard;
-
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
   const kind = String(body?.kind || '');
+
+  // Which Content tab this edit belongs to, and therefore which permission it
+  // needs, is only knowable once the payload is parsed.
+  const moduleKey = CONTENT_KIND_MODULES[kind];
+  if (!moduleKey) return jsonError('Unsupported content kind.', 400);
+
+  const guard = await requirePermission(moduleKey, 'update');
+  if (isGuardFailure(guard)) return guard.response;
+  const { user } = guard;
 
   if (kind === 'banner') {
     const banner = await prisma.banner.findUnique({ where: { id } });
@@ -181,12 +187,15 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requirePermission('content', 'delete');
+  const { id } = await params;
+  const kind = new URL(req.url).searchParams.get('kind') ?? '';
+
+  const moduleKey = CONTENT_KIND_MODULES[kind];
+  if (!moduleKey) return jsonError('Unsupported content kind.', 400);
+
+  const guard = await requirePermission(moduleKey, 'delete');
   if (isGuardFailure(guard)) return guard.response;
   const { user } = guard;
-
-  const { id } = await params;
-  const kind = new URL(req.url).searchParams.get('kind');
 
   if (kind === 'banner') {
     const banner = await prisma.banner.findUnique({ where: { id } });

@@ -2,7 +2,7 @@ import prisma from '@/lib/prisma';
 import { PageHeader } from '@/components/admin/page-header';
 import { ContentManager } from '@/components/admin/content-manager';
 import { getCurrentUser } from '@/lib/session';
-import { hasPermission } from '@/lib/permissions';
+import { hasPermission, readableTabs } from '@/lib/permissions';
 import { getSettings } from '@/lib/settings';
 import { listSummaries } from '@/lib/participant-lists';
 
@@ -16,15 +16,24 @@ function toLocalInput(date: Date | null) {
 }
 
 export default async function ContentPage() {
-  const [user, banners, ads, terms, participantLists, settings] = await Promise.all([
-    getCurrentUser({ allowRefresh: false }),
-    prisma.banner.findMany({ orderBy: { displayOrder: 'asc' } }),
-    prisma.advertisement.findMany({ orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] }),
-    prisma.termsAndConditions.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: { _count: { select: { auctions: true } } },
-    }),
-    listSummaries(),
+  // The tabs decide what is even fetched: a role without Ads should not have the
+  // ad copy serialized into its page, only to be hidden in the browser.
+  const user = await getCurrentUser({ allowRefresh: false });
+  const tabs = readableTabs(user, 'content');
+  const open = (tab: string) => tabs.some((entry) => entry.tab === tab);
+
+  const [banners, ads, terms, participantLists, settings] = await Promise.all([
+    open('banners') ? prisma.banner.findMany({ orderBy: { displayOrder: 'asc' } }) : [],
+    open('ads')
+      ? prisma.advertisement.findMany({ orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] })
+      : [],
+    open('terms')
+      ? prisma.termsAndConditions.findMany({
+          orderBy: { createdAt: 'desc' },
+          include: { _count: { select: { auctions: true } } },
+        })
+      : [],
+    open('participant-lists') ? listSummaries() : [],
     getSettings(),
   ]);
 
@@ -79,9 +88,7 @@ export default async function ContentPage() {
         }))}
         participantLists={participantLists}
         logoUrl={String(settings['platform.logoUrl'] ?? '')}
-        canCreate={hasPermission(user, 'content', 'create')}
-        canUpdate={hasPermission(user, 'content', 'update')}
-        canDelete={hasPermission(user, 'content', 'delete')}
+        tabs={tabs}
         canEditBranding={hasPermission(user, 'settings', 'update')}
       />
     </>

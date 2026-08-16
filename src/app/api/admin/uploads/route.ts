@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/session';
-import { hasPermission } from '@/lib/permissions';
+import { hasModuleAccess } from '@/lib/permissions';
 import { jsonError } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
 import { ALLOWED_IMAGE_TYPES, uploadsDir } from '@/lib/uploads';
@@ -47,8 +47,10 @@ export async function POST(req: NextRequest) {
   const user = await getCurrentUser({ allowRefresh: false });
   if (!user) return jsonError('Not authenticated', 401);
 
+  // Content grants artwork rights through its tabs (banners, ads, branding),
+  // so the module's own row is not the whole answer here.
   const allowed = UPLOAD_MODULES.some(
-    (module) => hasPermission(user, module, 'create') || hasPermission(user, module, 'update')
+    (module) => hasModuleAccess(user, module, 'create') || hasModuleAccess(user, module, 'update')
   );
   if (!allowed) return jsonError('You do not have permission to upload images.', 403);
 

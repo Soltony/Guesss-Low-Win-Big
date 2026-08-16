@@ -6,11 +6,24 @@
  * these same entries with icons for the sidebar.
  */
 
+/** A tab on a page that carries its own permissions, granted as `parent.tab`. */
+export interface SubModule {
+  /** Matches the tab's `value` in the page's `<Tabs>`. */
+  tab: string;
+  label: string;
+}
+
 export interface AdminRoute {
   path: string;
   label: string;
   /** Role names allowed here on top of the module permission check. */
   roles?: string[];
+  /**
+   * Tabs that are permissioned separately (`content.banners`). They never reach
+   * the sidebar — the parent module still decides who may open the page at all,
+   * and the tabs decide what they see once they are on it.
+   */
+  subModules?: SubModule[];
 }
 
 export const ADMIN_ROUTES: AdminRoute[] = [
@@ -21,9 +34,26 @@ export const ADMIN_ROUTES: AdminRoute[] = [
   { path: '/admin/payments', label: 'Payments' },
   { path: '/admin/items', label: 'Items' },
   { path: '/admin/categories', label: 'Categories' },
-  { path: '/admin/content', label: 'Content' },
+  {
+    path: '/admin/content',
+    label: 'Content',
+    subModules: [
+      { tab: 'banners', label: 'Banners' },
+      { tab: 'ads', label: 'Ads' },
+      { tab: 'terms', label: 'Terms & conditions' },
+      { tab: 'participant-lists', label: 'Participant lists' },
+      { tab: 'branding', label: 'Branding' },
+    ],
+  },
   { path: '/admin/bidders', label: 'Bidders' },
-  { path: '/admin/notifications', label: 'Notifications' },
+  {
+    path: '/admin/notifications',
+    label: 'Notifications',
+    subModules: [
+      { tab: 'templates', label: 'Templates' },
+      { tab: 'logs', label: 'Delivery log' },
+    ],
+  },
   { path: '/admin/approvals', label: 'Approvals' },
   { path: '/admin/reports', label: 'Reports' },
   { path: '/admin/audit-logs', label: 'Audit Logs', roles: ['Super Admin', 'Auditor', 'Compliance'] },
@@ -36,7 +66,44 @@ export function moduleKeyFor(label: string) {
   return label.toLowerCase().replace(/\s+/g, '-');
 }
 
-export const MODULE_KEYS = ADMIN_ROUTES.map((r) => moduleKeyFor(r.label));
+/** `content` + `banners` → `content.banners`. */
+export function subModuleKey(parentKey: string, tab: string) {
+  return `${parentKey}.${tab}`;
+}
+
+/** The page-level module a key belongs to. A parent key resolves to itself. */
+export function parentModuleKey(key: string) {
+  const dot = key.indexOf('.');
+  return dot === -1 ? key : key.slice(0, dot);
+}
+
+export function subModulesFor(parentKey: string): SubModule[] {
+  return ADMIN_ROUTES.find((route) => moduleKeyFor(route.label) === parentKey)?.subModules ?? [];
+}
+
+/** Page-level modules only — what the sidebar and the proxy gate on. */
+export const PARENT_MODULE_KEYS = ADMIN_ROUTES.map((r) => moduleKeyFor(r.label));
+
+/**
+ * Every key a role may be granted: each module followed by its tabs.
+ * `sanitizePermissions` drops anything missing here, so a new sub-module only
+ * becomes grantable once it is listed on its route above.
+ */
+export const MODULE_KEYS = ADMIN_ROUTES.flatMap((route) => {
+  const key = moduleKeyFor(route.label);
+  return [key, ...(route.subModules ?? []).map((sub) => subModuleKey(key, sub.tab))];
+});
+
+/**
+ * `/api/admin/content` is a single endpoint discriminated by `kind` in the
+ * payload, which the proxy cannot read — the handlers resolve the tab module
+ * themselves once the body is parsed.
+ */
+export const CONTENT_KIND_MODULES: Record<string, string> = {
+  banner: 'content.banners',
+  ad: 'content.ads',
+  terms: 'content.terms',
+};
 
 /** Pages any authenticated admin may open, whatever their permissions are. */
 export const PERMISSION_EXEMPT_ROUTES = [

@@ -3,17 +3,24 @@ import { PageHeader } from '@/components/admin/page-header';
 import { StatCard, StatGrid } from '@/components/admin/stat-card';
 import { NotificationsManager } from '@/components/admin/notifications-manager';
 import { getCurrentUser } from '@/lib/session';
-import { hasPermission } from '@/lib/permissions';
+import { readableTabs } from '@/lib/permissions';
 import { getSettings } from '@/lib/settings';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Notifications' };
 
 export default async function NotificationsPage() {
-  const [user, templates, logs, counts, settings] = await Promise.all([
-    getCurrentUser({ allowRefresh: false }),
+  const user = await getCurrentUser({ allowRefresh: false });
+  const tabs = readableTabs(user, 'notifications');
+  const open = (tab: string) => tabs.some((entry) => entry.tab === tab);
+
+  // The stat cards are aggregates every reader of this page sees; only the row
+  // data behind a tab is withheld when the role cannot open that tab.
+  const [templates, logs, counts, settings] = await Promise.all([
     prisma.notificationTemplate.findMany({ orderBy: { code: 'asc' } }),
-    prisma.notificationLog.findMany({ orderBy: { createdAt: 'desc' }, take: 100 }),
+    open('logs')
+      ? prisma.notificationLog.findMany({ orderBy: { createdAt: 'desc' }, take: 100 })
+      : [],
     prisma.notificationLog.groupBy({ by: ['status'], _count: { _all: true } }),
     getSettings(),
   ]);
@@ -44,8 +51,8 @@ export default async function NotificationsPage() {
 
       <div className="mt-6">
         <NotificationsManager
-          canUpdate={hasPermission(user, 'notifications', 'update')}
-          templates={templates.map((template) => ({
+          tabs={tabs}
+          templates={(open('templates') ? templates : []).map((template) => ({
             id: template.id,
             code: template.code,
             name: template.name,

@@ -43,6 +43,18 @@ import {
   MAX_MIN_VIEW_SECONDS,
   type AdFrequency,
 } from '@/lib/types';
+import type { TabPermission } from '@/lib/permissions';
+
+const TAB_ICONS: Record<string, typeof Images> = {
+  banners: Images,
+  ads: Megaphone,
+  terms: ScrollText,
+  'participant-lists': Users,
+  branding: Palette,
+};
+
+/** A tab the role does not reach at all — its section is never rendered. */
+const NO_ACCESS = { canCreate: false, canUpdate: false, canDelete: false };
 
 export interface BannerRow {
   id: string;
@@ -137,9 +149,7 @@ export function ContentManager({
   terms,
   participantLists,
   logoUrl,
-  canCreate,
-  canUpdate,
-  canDelete,
+  tabs,
   canEditBranding,
 }: {
   banners: BannerRow[];
@@ -152,12 +162,17 @@ export function ContentManager({
   participantLists: ParticipantListRow[];
   /** `platform.logoUrl` — '' means the built-in mark is in use. */
   logoUrl: string;
-  canCreate: boolean;
-  canUpdate: boolean;
-  canDelete: boolean;
+  /** The tabs this role may open, each with its own rights. Order is the registry's. */
+  tabs: TabPermission[];
   /** The icon is a platform setting, so editing it needs the settings module. */
   canEditBranding: boolean;
 }) {
+  const byTab = new Map(tabs.map((tab) => [tab.tab, tab]));
+  const bannerPerms = byTab.get('banners') ?? NO_ACCESS;
+  const adPerms = byTab.get('ads') ?? NO_ACCESS;
+  const termsPerms = byTab.get('terms') ?? NO_ACCESS;
+  const listPerms = byTab.get('participant-lists') ?? NO_ACCESS;
+
   const router = useRouter();
   const { toast } = useToast();
   const [bannerForm, setBannerForm] = useState<BannerRow | null>(null);
@@ -318,34 +333,33 @@ export function ContentManager({
     router.refresh();
   };
 
+  if (tabs.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
+        Your role opens this page but has no content sections on it. Ask an administrator to grant a
+        tab under <strong>Content</strong> in Access Control.
+      </div>
+    );
+  }
+
   return (
     <>
-      <Tabs defaultValue="banners">
+      <Tabs defaultValue={tabs[0].tab}>
         <TabsList>
-          <TabsTrigger value="banners">
-            <Images className="mr-1.5 h-4 w-4" />
-            Banners
-          </TabsTrigger>
-          <TabsTrigger value="ads">
-            <Megaphone className="mr-1.5 h-4 w-4" />
-            Ads
-          </TabsTrigger>
-          <TabsTrigger value="terms">
-            <ScrollText className="mr-1.5 h-4 w-4" />
-            Terms &amp; conditions
-          </TabsTrigger>
-          <TabsTrigger value="participant-lists">
-            <Users className="mr-1.5 h-4 w-4" />
-            Participant lists
-          </TabsTrigger>
-          <TabsTrigger value="branding">
-            <Palette className="mr-1.5 h-4 w-4" />
-            Branding
-          </TabsTrigger>
+          {tabs.map((tab) => {
+            const Icon = TAB_ICONS[tab.tab];
+            return (
+              <TabsTrigger key={tab.tab} value={tab.tab}>
+                {Icon && <Icon className="mr-1.5 h-4 w-4" />}
+                {tab.label}
+              </TabsTrigger>
+            );
+          })}
         </TabsList>
 
+        {byTab.has('banners') && (
         <TabsContent value="banners" className="mt-4">
-          {canCreate && (
+          {bannerPerms.canCreate && (
             <div className="mb-4">
               <Button
                 onClick={() => setBannerForm({ ...blankBanner, displayOrder: banners.length })}
@@ -399,12 +413,12 @@ export function ContentManager({
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex justify-end gap-1">
-                        {canUpdate && (
+                        {bannerPerms.canUpdate && (
                           <Button variant="ghost" size="sm" onClick={() => setBannerForm(banner)}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        {canDelete && (
+                        {bannerPerms.canDelete && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -428,10 +442,12 @@ export function ContentManager({
             </table>
           </TableCard>
         </TabsContent>
+        )}
 
+        {byTab.has('ads') && (
         <TabsContent value="ads" className="mt-4">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            {canCreate && (
+            {adPerms.canCreate && (
               <Button onClick={() => setAdForm({ ...blankAd, displayOrder: ads.length })}>
                 <Plus className="mr-1.5 h-4 w-4" />
                 Add ad
@@ -562,12 +578,12 @@ export function ContentManager({
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex justify-end gap-1">
-                        {canUpdate && (
+                        {adPerms.canUpdate && (
                           <Button variant="ghost" size="sm" onClick={() => setAdForm(ad)}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        {canDelete && (
+                        {adPerms.canDelete && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -591,9 +607,11 @@ export function ContentManager({
             </table>
           </TableCard>
         </TabsContent>
+        )}
 
+        {byTab.has('terms') && (
         <TabsContent value="terms" className="mt-4">
-          {canCreate && (
+          {termsPerms.canCreate && (
             <div className="mb-4">
               <Button
                 onClick={() =>
@@ -636,7 +654,7 @@ export function ContentManager({
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex justify-end gap-1">
-                        {canUpdate && !term.active && (
+                        {termsPerms.canUpdate && !term.active && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -655,7 +673,7 @@ export function ContentManager({
                             Make active
                           </Button>
                         )}
-                        {canUpdate && (
+                        {termsPerms.canUpdate && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -673,7 +691,7 @@ export function ContentManager({
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        {canDelete && !term.active && term.auctionCount === 0 && (
+                        {termsPerms.canDelete && !term.active && term.auctionCount === 0 && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -697,16 +715,20 @@ export function ContentManager({
             </table>
           </TableCard>
         </TabsContent>
+        )}
 
+        {byTab.has('participant-lists') && (
         <TabsContent value="participant-lists" className="mt-4">
           <ParticipantListManager
             lists={participantLists}
-            canCreate={canCreate}
-            canUpdate={canUpdate}
-            canDelete={canDelete}
+            canCreate={listPerms.canCreate}
+            canUpdate={listPerms.canUpdate}
+            canDelete={listPerms.canDelete}
           />
         </TabsContent>
+        )}
 
+        {byTab.has('branding') && (
         <TabsContent value="branding" className="mt-4">
           <form onSubmit={saveBranding} className="max-w-2xl space-y-4">
             <div className="rounded-xl border border-border bg-card p-4">
@@ -785,6 +807,7 @@ export function ContentManager({
             )}
           </form>
         </TabsContent>
+        )}
       </Tabs>
 
       {/* Banner dialog */}

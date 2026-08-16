@@ -25,14 +25,14 @@ export const runtime = 'nodejs';
  * POST — create one, optionally importing a file in the same request
  */
 export async function GET() {
-  const guard = await requirePermission('content', 'read');
+  const guard = await requirePermission('content.participant-lists', 'read');
   if (isGuardFailure(guard)) return guard.response;
 
   return NextResponse.json({ lists: await listSummaries() });
 }
 
 export async function POST(req: NextRequest) {
-  const guard = await requirePermission('content', 'create');
+  const guard = await requirePermission('content.participant-lists', 'create');
   if (isGuardFailure(guard)) return guard.response;
   const { user } = guard;
   const actor = { id: user.id, fullName: user.fullName };

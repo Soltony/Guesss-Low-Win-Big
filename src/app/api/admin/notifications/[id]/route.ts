@@ -6,7 +6,7 @@ import { createAuditLog } from '@/lib/audit-log';
 export const dynamic = 'force-dynamic';
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const guard = await requirePermission('notifications', 'update');
+  const guard = await requirePermission('notifications.templates', 'update');
   if (isGuardFailure(guard)) return guard.response;
   const { user } = guard;
 

@@ -12,7 +12,7 @@ import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { SETTING_DEFINITIONS } from '../src/lib/settings';
 import { DEFAULT_TEMPLATES } from '../src/lib/notifications';
-import { MODULE_KEYS } from '../src/lib/route-permissions';
+import { MODULE_KEYS, parentModuleKey } from '../src/lib/route-permissions';
 
 const prisma = new PrismaClient();
 
@@ -21,7 +21,9 @@ type Actions = 'read' | 'create' | 'update' | 'delete' | 'approve';
 function matrix(spec: Record<string, Actions[] | 'all'>) {
   const out: Record<string, Record<Actions, boolean>> = {};
   for (const key of MODULE_KEYS) {
-    const granted = spec[key];
+    // A tab (`content.banners`) inherits its module's grant unless the spec
+    // names it outright, so granting a module still grants everything on it.
+    const granted = spec[key] ?? spec[parentModuleKey(key)];
     const all = granted === 'all';
     const list = Array.isArray(granted) ? granted : [];
     out[key] = {

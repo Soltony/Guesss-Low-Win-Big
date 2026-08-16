@@ -17,7 +17,7 @@ export const runtime = 'nodejs';
  * exactly as they were, and only pick up the change if somebody re-syncs.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const guard = await requirePermission('content', 'update');
+  const guard = await requirePermission('content.participant-lists', 'update');
   if (isGuardFailure(guard)) return guard.response;
   const { user } = guard;
 
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const guard = await requirePermission('content', 'update');
+  const guard = await requirePermission('content.participant-lists', 'update');
   if (isGuardFailure(guard)) return guard.response;
 
   const { id } = await params;

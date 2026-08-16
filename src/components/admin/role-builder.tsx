@@ -2,7 +2,7 @@
 
 import { Fragment, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { ChevronRight, Loader2, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,12 +11,19 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { TableCard } from '@/components/admin/data-shell';
 import { useToast } from '@/hooks/use-toast';
-import { PERMISSION_ACTIONS, type PermissionAction, type Permissions } from '@/lib/types';
+import {
+  PERMISSION_ACTIONS,
+  type ModulePermission,
+  type PermissionAction,
+  type Permissions,
+} from '@/lib/types';
 
 interface ModuleRow {
   key: string;
   label: string;
   group: string;
+  /** Permissioned tabs on that page, keyed `parent.tab`. */
+  subModules: { key: string; label: string }[];
 }
 
 interface RoleRow {
@@ -30,12 +37,44 @@ interface RoleRow {
 
 const SUPER_ADMIN = 'Super Admin';
 
+const NO_ACTIONS = {
+  read: false,
+  create: false,
+  update: false,
+  delete: false,
+  approve: false,
+} as const;
+
+const allActions = (value: boolean) => ({
+  read: value,
+  create: value,
+  update: value,
+  delete: value,
+  approve: value,
+});
+
 function emptyMatrix(modules: ModuleRow[]): Permissions {
   const out: Permissions = {};
   for (const module of modules) {
-    out[module.key] = { read: false, create: false, update: false, delete: false, approve: false };
+    out[module.key] = { ...NO_ACTIONS };
+    for (const sub of module.subModules) out[sub.key] = { ...NO_ACTIONS };
   }
   return out;
+}
+
+/**
+ * Re-derives a module row from its tabs, so the saved matrix never claims
+ * something its tabs do not back. `read` opens the page, so one readable tab is
+ * enough; every other action is only true once every tab carries it.
+ */
+function syncModuleRow(draft: Permissions, module: ModuleRow) {
+  if (module.subModules.length === 0) return;
+  const rolled: ModulePermission = {};
+  for (const action of PERMISSION_ACTIONS) {
+    const values = module.subModules.map((sub) => Boolean(draft[sub.key]?.[action]));
+    rolled[action] = action === 'read' ? values.some(Boolean) : values.every(Boolean);
+  }
+  draft[module.key] = rolled;
 }
 
 export function RoleBuilder({
@@ -66,6 +105,8 @@ export function RoleBuilder({
     selected ? { ...emptyMatrix(modules), ...selected.permissions } : emptyMatrix(modules)
   );
   const [draftRoleId, setDraftRoleId] = useState(selected?.id ?? '');
+  /** Modules whose tabs are showing. Collapsed until asked for. */
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   // Switching roles re-seeds the draft from the newly selected role.
   if (selected && selected.id !== draftRoleId) {
@@ -73,36 +114,84 @@ export function RoleBuilder({
     setDraft({ ...emptyMatrix(modules), ...selected.permissions });
   }
 
-  const toggle = (moduleKey: string, action: PermissionAction, value: boolean) => {
+  // Which module a tab belongs to, so editing a tab can re-roll its module row.
+  const moduleOfTab = new Map<string, ModuleRow>();
+  for (const module of modules) {
+    for (const sub of module.subModules) moduleOfTab.set(sub.key, module);
+  }
+
+  /** One action on one row: a module without tabs, or a single tab. */
+  const toggle = (key: string, action: PermissionAction, value: boolean) => {
     setDraft((prev) => {
-      const next = { ...prev, [moduleKey]: { ...prev[moduleKey], [action]: value } };
-      // Any action implies being able to open the module at all.
-      if (value && action !== 'read') next[moduleKey].read = true;
-      // Losing read means losing everything for that module.
-      if (!value && action === 'read') {
-        next[moduleKey] = {
-          read: false,
-          create: false,
-          update: false,
-          delete: false,
-          approve: false,
-        };
-      }
+      const next = { ...prev, [key]: { ...prev[key], [action]: value } };
+      // Any action implies being able to open what it applies to.
+      if (value && action !== 'read') next[key].read = true;
+      // Losing read means losing everything on that row.
+      if (!value && action === 'read') next[key] = { ...NO_ACTIONS };
+
+      const module = moduleOfTab.get(key);
+      if (module) syncModuleRow(next, module);
       return next;
     });
   };
 
-  const toggleModuleAll = (moduleKey: string, value: boolean) => {
-    setDraft((prev) => ({
-      ...prev,
-      [moduleKey]: {
-        read: value,
-        create: value,
-        update: value,
-        delete: value,
-        approve: value,
-      },
-    }));
+  /** Every action on one row. */
+  const toggleRowAll = (key: string, value: boolean) => {
+    setDraft((prev) => {
+      const next = { ...prev, [key]: allActions(value) };
+      const module = moduleOfTab.get(key);
+      if (module) syncModuleRow(next, module);
+      return next;
+    });
+  };
+
+  /**
+   * A module row that has tabs is a bulk control: the click lands on every tab
+   * under it, and the module row is re-derived from the result.
+   */
+  const toggleModule = (module: ModuleRow, action: PermissionAction, value: boolean) => {
+    setDraft((prev) => {
+      const next = { ...prev };
+      for (const sub of module.subModules) {
+        next[sub.key] = { ...next[sub.key], [action]: value };
+        if (value && action !== 'read') next[sub.key].read = true;
+        if (!value && action === 'read') next[sub.key] = { ...NO_ACTIONS };
+      }
+      syncModuleRow(next, module);
+      return next;
+    });
+  };
+
+  const toggleModuleAll = (module: ModuleRow, value: boolean) => {
+    if (module.subModules.length === 0) {
+      toggleRowAll(module.key, value);
+      return;
+    }
+    setDraft((prev) => {
+      const next = { ...prev };
+      for (const sub of module.subModules) next[sub.key] = allActions(value);
+      syncModuleRow(next, module);
+      return next;
+    });
+  };
+
+  /**
+   * How a module's own box reads when its tabs hold the grants: ticked when
+   * every tab has the action, a dash when only some do.
+   */
+  const rollUp = (module: ModuleRow, action: PermissionAction): boolean | 'indeterminate' => {
+    const granted = module.subModules.filter((sub) => draft[sub.key]?.[action]).length;
+    if (granted === 0) return false;
+    return granted === module.subModules.length ? true : 'indeterminate';
+  };
+
+  const toggleExpanded = (key: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   };
 
   const save = async () => {
@@ -311,35 +400,117 @@ export function RoleBuilder({
                         .filter((module) => module.group === group)
                         .map((module) => {
                           const perms = draft[module.key] ?? {};
-                          const allOn =
-                            isSuperAdmin || PERMISSION_ACTIONS.every((a) => perms[a]);
+                          // A module with tabs is a bulk control over them: its
+                          // boxes read as ticked, dashed or empty accordingly.
+                          const hasTabs = module.subModules.length > 0;
+                          const isOpen = expanded.has(module.key);
+                          const openTabs = isSuperAdmin
+                            ? module.subModules.length
+                            : module.subModules.filter((sub) => draft[sub.key]?.read).length;
+                          const allOn = isSuperAdmin
+                            ? true
+                            : hasTabs
+                              ? PERMISSION_ACTIONS.every((a) => rollUp(module, a) === true)
+                              : PERMISSION_ACTIONS.every((a) => perms[a]);
 
                           return (
-                            <tr key={module.key} className="hover:bg-secondary/20">
-                              <td className="px-4 py-2 font-medium">{module.label}</td>
-                              {PERMISSION_ACTIONS.map((action) => (
-                                <td key={action} className="px-3 py-2 text-center">
+                            <Fragment key={module.key}>
+                              <tr className="hover:bg-secondary/20">
+                                <td className="px-4 py-2 font-medium">
+                                  {hasTabs ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleExpanded(module.key)}
+                                      aria-expanded={isOpen}
+                                      className="-ml-1 flex items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-secondary/60"
+                                    >
+                                      <ChevronRight
+                                        className={cn(
+                                          'h-3.5 w-3.5 text-muted-foreground transition-transform',
+                                          isOpen && 'rotate-90'
+                                        )}
+                                      />
+                                      {module.label}
+                                      <Badge
+                                        variant="secondary"
+                                        className="px-1.5 py-0 text-[10px] font-normal"
+                                      >
+                                        {openTabs}/{module.subModules.length} tabs
+                                      </Badge>
+                                    </button>
+                                  ) : (
+                                    module.label
+                                  )}
+                                </td>
+                                {PERMISSION_ACTIONS.map((action) => (
+                                  <td key={action} className="px-3 py-2 text-center">
+                                    <Checkbox
+                                      checked={
+                                        isSuperAdmin ||
+                                        (hasTabs ? rollUp(module, action) : Boolean(perms[action]))
+                                      }
+                                      disabled={locked}
+                                      onCheckedChange={(checked) =>
+                                        hasTabs
+                                          ? toggleModule(module, action, Boolean(checked))
+                                          : toggle(module.key, action, Boolean(checked))
+                                      }
+                                      aria-label={`${action} ${module.label}${
+                                        hasTabs ? ' and every tab on it' : ''
+                                      }`}
+                                    />
+                                  </td>
+                                ))}
+                                <td className="px-3 py-2 text-center">
                                   <Checkbox
-                                    checked={isSuperAdmin || Boolean(perms[action])}
+                                    checked={allOn}
                                     disabled={locked}
                                     onCheckedChange={(checked) =>
-                                      toggle(module.key, action, Boolean(checked))
+                                      toggleModuleAll(module, Boolean(checked))
                                     }
-                                    aria-label={`${action} ${module.label}`}
+                                    aria-label={`Grant all on ${module.label}`}
                                   />
                                 </td>
-                              ))}
-                              <td className="px-3 py-2 text-center">
-                                <Checkbox
-                                  checked={allOn}
-                                  disabled={locked}
-                                  onCheckedChange={(checked) =>
-                                    toggleModuleAll(module.key, Boolean(checked))
-                                  }
-                                  aria-label={`Grant all on ${module.label}`}
-                                />
-                              </td>
-                            </tr>
+                              </tr>
+
+                              {isOpen &&
+                                module.subModules.map((sub) => {
+                                  const subPerms = draft[sub.key] ?? {};
+                                  const subAllOn =
+                                    isSuperAdmin || PERMISSION_ACTIONS.every((a) => subPerms[a]);
+
+                                  return (
+                                    <tr key={sub.key} className="bg-secondary/10 hover:bg-secondary/30">
+                                      <td className="py-2 pl-10 pr-4 text-muted-foreground">
+                                        <span className="mr-1.5 text-border">└</span>
+                                        {sub.label}
+                                      </td>
+                                      {PERMISSION_ACTIONS.map((action) => (
+                                        <td key={action} className="px-3 py-2 text-center">
+                                          <Checkbox
+                                            checked={isSuperAdmin || Boolean(subPerms[action])}
+                                            disabled={locked}
+                                            onCheckedChange={(checked) =>
+                                              toggle(sub.key, action, Boolean(checked))
+                                            }
+                                            aria-label={`${action} ${module.label} ${sub.label}`}
+                                          />
+                                        </td>
+                                      ))}
+                                      <td className="px-3 py-2 text-center">
+                                        <Checkbox
+                                          checked={subAllOn}
+                                          disabled={locked}
+                                          onCheckedChange={(checked) =>
+                                            toggleRowAll(sub.key, Boolean(checked))
+                                          }
+                                          aria-label={`Grant all on ${module.label} ${sub.label}`}
+                                        />
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                            </Fragment>
                           );
                         })}
                     </Fragment>
@@ -351,6 +522,9 @@ export function RoleBuilder({
             <p className="mt-3 text-xs text-muted-foreground">
               <strong>Read</strong> opens the module. <strong>Approve</strong> is the second-pair-of-eyes
               right: settling auctions, deciding pending changes and confirming payments manually.
+              Rows with a <strong>tabs</strong> count expand: ticking the module applies to every tab
+              under it, and a dashed box means only some of them have it. A tab with nothing ticked
+              is hidden from that page entirely.
             </p>
           </>
         )}

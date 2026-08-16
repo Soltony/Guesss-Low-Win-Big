@@ -20,6 +20,12 @@ import {
 import { StatusBadge } from '@/components/admin/status-badge';
 import { EmptyRow, TableCard } from '@/components/admin/data-shell';
 import { useToast } from '@/hooks/use-toast';
+import type { TabPermission } from '@/lib/permissions';
+
+const TAB_ICONS: Record<string, typeof BellRing> = {
+  templates: BellRing,
+  logs: ScrollText,
+};
 
 interface TemplateRow {
   id: string;
@@ -58,12 +64,16 @@ const PLACEHOLDERS: Record<string, string[]> = {
 export function NotificationsManager({
   templates,
   logs,
-  canUpdate,
+  tabs,
 }: {
   templates: TemplateRow[];
   logs: LogRow[];
-  canUpdate: boolean;
+  /** The tabs this role may open, each with its own rights. Order is the registry's. */
+  tabs: TabPermission[];
 }) {
+  const byTab = new Map(tabs.map((tab) => [tab.tab, tab]));
+  const canUpdate = Boolean(byTab.get('templates')?.canUpdate);
+
   const router = useRouter();
   const { toast } = useToast();
   const [editing, setEditing] = useState<TemplateRow | null>(null);
@@ -109,20 +119,31 @@ export function NotificationsManager({
     router.refresh();
   };
 
+  if (tabs.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
+        Your role opens this page but has no sections on it. Ask an administrator to grant a tab
+        under <strong>Notifications</strong> in Access Control.
+      </div>
+    );
+  }
+
   return (
     <>
-      <Tabs defaultValue="templates">
+      <Tabs defaultValue={tabs[0].tab}>
         <TabsList>
-          <TabsTrigger value="templates">
-            <BellRing className="mr-1.5 h-4 w-4" />
-            Templates
-          </TabsTrigger>
-          <TabsTrigger value="logs">
-            <ScrollText className="mr-1.5 h-4 w-4" />
-            Delivery log
-          </TabsTrigger>
+          {tabs.map((tab) => {
+            const Icon = TAB_ICONS[tab.tab];
+            return (
+              <TabsTrigger key={tab.tab} value={tab.tab}>
+                {Icon && <Icon className="mr-1.5 h-4 w-4" />}
+                {tab.label}
+              </TabsTrigger>
+            );
+          })}
         </TabsList>
 
+        {byTab.has('templates') && (
         <TabsContent value="templates" className="mt-4">
           <TableCard>
             <table className="w-full min-w-[820px] text-sm">
@@ -171,7 +192,9 @@ export function NotificationsManager({
             </table>
           </TableCard>
         </TabsContent>
+        )}
 
+        {byTab.has('logs') && (
         <TabsContent value="logs" className="mt-4">
           <TableCard>
             <table className="w-full min-w-[820px] text-sm">
@@ -206,6 +229,7 @@ export function NotificationsManager({
             </table>
           </TableCard>
         </TabsContent>
+        )}
       </Tabs>
 
       <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>

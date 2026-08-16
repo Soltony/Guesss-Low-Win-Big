@@ -21,7 +21,7 @@ export const runtime = 'nodejs';
  * DELETE — remove it, leaving every auction built from it untouched
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const guard = await requirePermission('content', 'read');
+  const guard = await requirePermission('content.participant-lists', 'read');
   if (isGuardFailure(guard)) return guard.response;
 
   const { id } = await params;
@@ -115,7 +115,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const guard = await requirePermission('content', 'update');
+  const guard = await requirePermission('content.participant-lists', 'update');
   if (isGuardFailure(guard)) return guard.response;
   const { user } = guard;
 
@@ -140,7 +140,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const guard = await requirePermission('content', 'delete');
+  const guard = await requirePermission('content.participant-lists', 'delete');
   if (isGuardFailure(guard)) return guard.response;
   const { user } = guard;
 

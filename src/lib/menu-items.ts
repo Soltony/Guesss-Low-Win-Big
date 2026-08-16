@@ -17,9 +17,15 @@ import {
   BookUser,
   type LucideIcon,
 } from 'lucide-react';
-import { ADMIN_ROUTES, moduleKeyFor } from './route-permissions';
+import { ADMIN_ROUTES, moduleKeyFor, type SubModule } from './route-permissions';
 
-export { moduleKeyFor, MODULE_KEYS, findAdminRoute } from './route-permissions';
+export {
+  moduleKeyFor,
+  MODULE_KEYS,
+  findAdminRoute,
+  subModuleKey,
+  subModulesFor,
+} from './route-permissions';
 
 export type MenuGroup = 'Operations' | 'Catalog' | 'Customers' | 'Governance' | 'System';
 
@@ -30,6 +36,8 @@ export interface MenuItem {
   icon: LucideIcon;
   roles?: string[];
   group: MenuGroup;
+  /** Permissioned tabs on the page — shown in the role builder, never in the sidebar. */
+  subModules?: SubModule[];
 }
 
 const DECORATION: Record<string, { icon: LucideIcon; group: MenuGroup }> = {

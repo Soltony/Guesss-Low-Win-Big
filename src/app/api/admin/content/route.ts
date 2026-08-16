@@ -3,19 +3,27 @@ import prisma from '@/lib/prisma';
 import { isGuardFailure, jsonError, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
 import { isAdFrequency, parseAdSchedule, parseAdTimings } from '@/lib/ads';
+import { CONTENT_KIND_MODULES } from '@/lib/route-permissions';
 
 export const dynamic = 'force-dynamic';
 
-/** Home-page banners, ad popups and the terms &amp; conditions library live under Content. */
+/**
+ * Home-page banners, ad popups and the terms &amp; conditions library live under
+ * Content, each on its own tab with its own permission. The tab is decided by
+ * `kind` in the payload, which the proxy cannot see, so the check happens here.
+ */
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const kind = String(body?.kind || '');
 
-  if (kind === 'banner') {
-    const guard = await requirePermission('content', 'create');
-    if (isGuardFailure(guard)) return guard.response;
-    const { user } = guard;
+  const moduleKey = CONTENT_KIND_MODULES[kind];
+  if (!moduleKey) return jsonError('Unsupported content kind.', 400);
 
+  const guard = await requirePermission(moduleKey, 'create');
+  if (isGuardFailure(guard)) return guard.response;
+  const { user } = guard;
+
+  if (kind === 'banner') {
     const title = String(body.title || '').trim();
     const imageUrl = String(body.imageUrl || '').trim();
     if (!title) return jsonError('Banner title is required.', 400);
@@ -48,10 +56,6 @@ export async function POST(req: NextRequest) {
   }
 
   if (kind === 'ad') {
-    const guard = await requirePermission('content', 'create');
-    if (isGuardFailure(guard)) return guard.response;
-    const { user } = guard;
-
     const title = String(body.title || '').trim();
     if (!title) return jsonError('Ad title is required.', 400);
 
@@ -103,10 +107,6 @@ export async function POST(req: NextRequest) {
   }
 
   if (kind === 'terms') {
-    const guard = await requirePermission('content', 'create');
-    if (isGuardFailure(guard)) return guard.response;
-    const { user } = guard;
-
     const version = String(body.version || '').trim();
     const title = String(body.title || '').trim();
     const contentEn = String(body.contentEn || '').trim();

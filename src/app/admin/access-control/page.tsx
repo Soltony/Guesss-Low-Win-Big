@@ -2,8 +2,8 @@ import prisma from '@/lib/prisma';
 import { PageHeader } from '@/components/admin/page-header';
 import { RoleBuilder } from '@/components/admin/role-builder';
 import { getCurrentUser } from '@/lib/session';
-import { hasPermission, parsePermissions } from '@/lib/permissions';
-import { allMenuItems } from '@/lib/menu-items';
+import { expandTabPermissions, hasPermission, parsePermissions } from '@/lib/permissions';
+import { allMenuItems, subModuleKey } from '@/lib/menu-items';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Access Control' };
@@ -28,6 +28,10 @@ export default async function AccessControlPage() {
           key: item.moduleKey,
           label: item.label,
           group: item.group,
+          subModules: (item.subModules ?? []).map((sub) => ({
+            key: subModuleKey(item.moduleKey, sub.tab),
+            label: sub.label,
+          })),
         }))}
         roles={roles.map((role) => ({
           id: role.id,
@@ -35,7 +39,9 @@ export default async function AccessControlPage() {
           description: role.description ?? '',
           isSystem: role.isSystem,
           userCount: role._count.users,
-          permissions: parsePermissions(role.permissions),
+          // Expanded so a role saved before a page gained tabs is edited as the
+          // access it actually has, not as a blank set of tabs.
+          permissions: expandTabPermissions(parsePermissions(role.permissions)),
         }))}
         canCreate={hasPermission(user, 'access-control', 'create')}
         canUpdate={hasPermission(user, 'access-control', 'update')}
