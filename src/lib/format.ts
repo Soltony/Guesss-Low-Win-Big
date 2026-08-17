@@ -36,6 +36,13 @@ export function round2(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Rendered wherever a bid amount is withheld. Lives here rather than beside the
+ * disclosure rules in bid-visibility.ts so client components can show a masked
+ * cell without pulling the decryption module into the browser bundle.
+ */
+export const MASKED_AMOUNT = '•••';
+
 export function maskPhone(phone: string | null | undefined) {
   if (!phone) return '—';
   const digits = phone.replace(/\D/g, '');

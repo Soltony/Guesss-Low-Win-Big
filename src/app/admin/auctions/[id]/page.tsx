@@ -14,6 +14,8 @@ import { rankUniqueBids } from '@/lib/auction-engine';
 import { touchAuctionLifecycle } from '@/lib/maintenance';
 import { lineageRounds } from '@/lib/reauction';
 import { isRestricted, participantCount, unlistedBidderCount } from '@/lib/eligibility';
+import { tryDecryptBidAmount } from '@/lib/bid-crypto';
+import { ADMIN_VIEWER, formatRevealedAmount, revealBidAmount } from '@/lib/bid-visibility';
 import { maskPhone, toNum } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -73,11 +75,13 @@ export default async function AdminAuctionDetail({
             include: { bidder: { select: { phoneNumber: true, fullName: true } } },
           })
         : Promise.resolve([]),
-      // Uniqueness preview for operators: how the result would land right now.
+      // Shape-only preview for operators: whether this round would produce a
+      // valid winner if it settled now. The amounts behind it are never
+      // rendered — see the Provisional result panel below.
       canSettle && auction.status !== 'SETTLED'
         ? prisma.bid.findMany({
             where: { auctionId: id, status: 'ACTIVE' },
-            select: { id: true, bidderId: true, amount: true, createdAt: true },
+            select: { id: true, bidderId: true, amountCipher: true, createdAt: true },
             orderBy: { createdAt: 'asc' },
           })
         : Promise.resolve([]),
@@ -92,17 +96,32 @@ export default async function AdminAuctionDetail({
       unlistedBidderCount(auction),
     ]);
 
+  // How this auction would settle right now, reduced to the facts an operator
+  // acts on: is there a unique amount at all, and would the participation floor
+  // let it be awarded. The ranking is computed and then thrown away — showing
+  // the amounts would put the live bid space in front of staff, which is
+  // exactly what the encryption exists to prevent. They appear in the Result
+  // panel the moment the auction settles.
+  const opened = distribution
+    .map((b) => ({
+      id: b.id,
+      bidderId: b.bidderId,
+      amount: tryDecryptBidAmount(b.amountCipher, { auctionId: id, bidderId: b.bidderId }),
+      createdAt: b.createdAt,
+    }))
+    .filter((b): b is typeof b & { amount: number } => b.amount !== null);
+
+  // Gated on the bids that exist, not the ones that opened: an auction where
+  // every row failed to decrypt is precisely the one an operator needs warned
+  // about before they try to settle it.
   const preview =
     distribution.length > 0
-      ? rankUniqueBids(
-          distribution.map((b) => ({
-            id: b.id,
-            bidderId: b.bidderId,
-            amount: toNum(b.amount),
-            createdAt: b.createdAt,
-          }))
-        ).slice(0, 5)
-      : [];
+      ? {
+          activeBids: distribution.length,
+          unreadable: distribution.length - opened.length,
+          uniqueAmounts: rankUniqueBids(opened).length,
+        }
+      : null;
 
   const currency = auction.currency === 'ETB' ? 'Br' : auction.currency;
 
@@ -235,32 +254,42 @@ export default async function AdminAuctionDetail({
           )}
 
           {/* Provisional result */}
-          {preview.length > 0 && (
+          {preview && (
             <TableCard>
               <div className="border-b border-border px-4 py-3">
                 <h2 className="font-semibold">Provisional result</h2>
                 <p className="text-xs text-muted-foreground">
-                  How this auction would settle right now. Never shown to bidders.
+                  Whether this auction would produce a winner if it settled right now. Amounts stay
+                  sealed until it settles — for staff as well as bidders.
                 </p>
               </div>
-              <table className="w-full text-sm">
-                <thead className="border-b border-border bg-secondary/50 text-left">
-                  <tr>
-                    <th className="px-4 py-2.5 font-semibold">Rank</th>
-                    <th className="px-4 py-2.5 text-right font-semibold">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {preview.map((entry) => (
-                    <tr key={entry.bidId}>
-                      <td className="px-4 py-2.5 font-bold tabular-nums">#{entry.rank}</td>
-                      <td className="px-4 py-2.5 text-right font-bold tabular-nums">
-                        {entry.amount.toFixed(2)} {currency}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+              <dl className="divide-y divide-border text-sm">
+                {[
+                  ['Confirmed bids in play', preview.activeBids.toLocaleString()],
+                  ['Amounts held by exactly one bidder', preview.uniqueAmounts.toLocaleString()],
+                  [
+                    'Would award the prize',
+                    preview.uniqueAmounts === 0
+                      ? 'No — every amount is duplicated'
+                      : auction.reauctionMinBids > 0 && preview.activeBids < auction.reauctionMinBids
+                        ? `No — below the ${auction.reauctionMinBids}-bid floor`
+                        : 'Yes',
+                  ],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex justify-between gap-3 px-4 py-2.5">
+                    <dt className="text-muted-foreground">{label}</dt>
+                    <dd className="text-right font-semibold">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+
+              {preview.unreadable > 0 && (
+                <p className="border-t border-border bg-destructive/10 px-4 py-2.5 text-xs font-medium text-destructive">
+                  {preview.unreadable} bid(s) could not be decrypted and settlement will refuse to
+                  run. Check BID_ENCRYPTION_KEY before settling this auction.
+                </p>
+              )}
             </TableCard>
           )}
 
@@ -395,7 +424,14 @@ export default async function AdminAuctionDetail({
           {canSeeBids && (
             <TableCard>
               <div className="flex items-center justify-between border-b border-border px-4 py-3">
-                <h2 className="font-semibold">Latest bids</h2>
+                <div>
+                  <h2 className="font-semibold">Latest bids</h2>
+                  {auction.status !== 'SETTLED' && (
+                    <p className="text-xs text-muted-foreground">
+                      Amounts are revealed once the auction settles.
+                    </p>
+                  )}
+                </div>
                 <Link
                   href={`/admin/bids?auctionId=${auction.id}`}
                   className="text-xs font-semibold text-primary hover:underline"
@@ -431,7 +467,7 @@ export default async function AdminAuctionDetail({
                         </Link>
                       </td>
                       <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
-                        {toNum(bid.amount).toFixed(2)}
+                        {formatRevealedAmount(revealBidAmount(bid, auction, ADMIN_VIEWER))}
                       </td>
                       <td className="px-4 py-2.5">
                         <StatusBadge status={bid.status} />

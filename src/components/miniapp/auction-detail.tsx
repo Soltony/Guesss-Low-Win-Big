@@ -15,7 +15,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { compactNumber } from '@/lib/format';
+import { MASKED_AMOUNT, compactNumber } from '@/lib/format';
 import { splitCarriedBids } from '@/lib/reauction-rules';
 import { Countdown } from './countdown';
 import { BidSheet } from './bid-sheet';
@@ -25,7 +25,8 @@ import type { PublicAuction } from '@/lib/miniapp-data';
 
 interface MyBid {
   id: string;
-  amount: number;
+  /** Null only if the stored amount could not be opened — rendered masked. */
+  amount: number | null;
   feeAmount: number;
   /** Paid for in an earlier round of this auction, so no fee was charged again. */
   carriedOver?: boolean;
@@ -359,7 +360,7 @@ export function AuctionDetail({
               <li key={bid.id} className="flex items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
                   <p className="text-base font-bold tabular-nums">
-                    {bid.amount.toFixed(2)}{' '}
+                    {bid.amount === null ? MASKED_AMOUNT : bid.amount.toFixed(2)}{' '}
                     <span className="text-xs font-medium text-muted-foreground">{currency}</span>
                   </p>
                   <p className="mt-0.5 text-[11px] text-muted-foreground">

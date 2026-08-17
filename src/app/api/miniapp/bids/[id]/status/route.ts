@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getBidderSession } from '@/lib/session';
 import { jsonError } from '@/lib/api';
+import { tryDecryptBidAmount } from '@/lib/bid-crypto';
 import { toNum } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -29,7 +30,12 @@ export async function GET(
   return NextResponse.json({
     id: bid.id,
     status: bid.status,
-    amount: toNum(bid.amount),
+    // Ownership was just checked above, and a bidder may always read their own
+    // amount — this is the value they typed into the bid form a moment ago.
+    amount: tryDecryptBidAmount(bid.amountCipher, {
+      auctionId: bid.auctionId,
+      bidderId: bid.bidderId,
+    }),
     feeAmount: toNum(bid.feeAmount),
     sequence: bid.sequence,
     confirmedAt: bid.confirmedAt?.toISOString() ?? null,

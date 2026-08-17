@@ -1,5 +1,6 @@
 import prisma from './prisma';
 import { getSettings } from './settings';
+import { MASKED_AMOUNT } from './format';
 import type { Language } from './types';
 
 /**
@@ -32,6 +33,14 @@ export interface NotifyInput {
   code: TemplateCode;
   recipient: string;
   vars?: Record<string, string | number>;
+  /**
+   * Values the recipient is entitled to but the delivery log is not. They are
+   * rendered into the message that goes out and masked in the row we keep, so
+   * a bidder still reads their own bid amount in the SMS while
+   * `NotificationLog` — readable by anyone holding `notifications.logs` — never
+   * carries the live bid distribution.
+   */
+  secretVars?: Record<string, string | number>;
   language?: Language;
   bidderId?: string;
   auctionId?: string;
@@ -51,24 +60,36 @@ export async function notify(input: NotifyInput): Promise<{ sent: boolean; reaso
     }
 
     const lang = input.language ?? 'en';
-    const body = render(
-      lang === 'am' && template.bodyAm ? template.bodyAm : template.bodyEn,
-      input.vars ?? {}
-    );
+    const source = lang === 'am' && template.bodyAm ? template.bodyAm : template.bodyEn;
+
+    const secret = input.secretVars ?? {};
+    const body = render(source, { ...(input.vars ?? {}), ...secret });
+    const loggedBody = Object.keys(secret).length
+      ? render(source, {
+          ...(input.vars ?? {}),
+          ...Object.fromEntries(Object.keys(secret).map((key) => [key, MASKED_AMOUNT])),
+        })
+      : body;
 
     const log = await prisma.notificationLog.create({
       data: {
         templateCode: input.code,
         channel: template.channel,
         recipient: input.recipient,
-        body,
+        body: loggedBody,
         status: 'QUEUED',
         bidderId: input.bidderId,
         auctionId: input.auctionId,
       },
     });
 
-    const result = await dispatch(template.channel, input.recipient, body, template.subject);
+    const result = await dispatch(
+      template.channel,
+      input.recipient,
+      body,
+      template.subject,
+      loggedBody
+    );
 
     await prisma.notificationLog.update({
       where: { id: log.id },
@@ -90,14 +111,17 @@ async function dispatch(
   channel: string,
   recipient: string,
   body: string,
-  subject?: string | null
+  subject?: string | null,
+  /** The masked rendering, for anything written to a log rather than sent. */
+  loggedBody: string = body
 ): Promise<{ ok: boolean; error?: string }> {
   const url = process.env.SMS_API_URL;
 
   // Without a configured provider we still record the message so the flow is
-  // fully exercised and operations can see exactly what would have been sent.
+  // fully exercised and operations can see exactly what would have been sent —
+  // masked, because stdout is a log like any other.
   if (!url) {
-    console.log(`[notifications] (no provider configured) ${channel} → ${recipient}: ${body}`);
+    console.log(`[notifications] (no provider configured) ${channel} → ${recipient}: ${loggedBody}`);
     return { ok: true };
   }
 

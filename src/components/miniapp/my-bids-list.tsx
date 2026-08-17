@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { CheckCircle2, ChevronDown, Gavel, Loader2, Lock, Package, XCircle } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { MASKED_AMOUNT } from '@/lib/format';
 import { Countdown } from './countdown';
 import { MiniHero } from './section-heading';
 import { useLanguage } from './language-provider';
@@ -19,7 +20,8 @@ interface Entry {
   revealed: boolean;
   bids: {
     id: string;
-    amount: number;
+    /** Null only if the stored amount could not be opened — rendered masked. */
+    amount: number | null;
     feeAmount: number;
     /** Paid for in an earlier round of this auction, so no fee was charged again. */
     carriedOver: boolean;
@@ -144,7 +146,7 @@ export function MyBidsList({ entries, totalSpent }: { entries: Entry[]; totalSpe
                         className="flex items-center justify-between gap-3 px-4 py-2.5"
                       >
                         <span className="text-sm font-semibold tabular-nums">
-                          {bid.amount.toFixed(2)}{' '}
+                          {bid.amount === null ? MASKED_AMOUNT : bid.amount.toFixed(2)}{' '}
                           <span className="text-xs font-normal text-muted-foreground">
                             {currency}
                           </span>

@@ -3,6 +3,7 @@ import { getSetting, getSettings } from './settings';
 import { createAuditLog } from './audit-log';
 import { toNum } from './format';
 import { createReauction, decideReauction, isWinnerValid, releaseBidCredit } from './reauction';
+import { decryptBidAmount } from './bid-crypto';
 import type { AuctionStatus, ReauctionState, SettlementActor } from './types';
 
 /**
@@ -204,18 +205,53 @@ export async function settleAuction(
 
   const activeBids = await prisma.bid.findMany({
     where: { auctionId, status: 'ACTIVE' },
-    select: { id: true, bidderId: true, amount: true, createdAt: true },
+    select: { id: true, bidderId: true, amountCipher: true, createdAt: true },
     orderBy: { createdAt: 'asc' },
   });
 
-  const rankings = rankUniqueBids(
-    activeBids.map((b) => ({
-      id: b.id,
-      bidderId: b.bidderId,
-      amount: toNum(b.amount),
-      createdAt: b.createdAt,
-    }))
-  );
+  // Settlement is the one place every amount on an auction is opened at once,
+  // and it decides who gets the prize. A bid that will not decrypt must stop
+  // the settlement rather than drop out of the ranking: silently omitting it
+  // could hand the win to the wrong bidder and nothing downstream would show
+  // it happened. `autoSettleDueAuctions` catches per auction, so one blocked
+  // auction leaves the rest of the platform settling normally.
+  const opened: { id: string; bidderId: string; amount: number; createdAt: Date }[] = [];
+  const unreadable: string[] = [];
+  for (const bid of activeBids) {
+    try {
+      opened.push({
+        id: bid.id,
+        bidderId: bid.bidderId,
+        amount: decryptBidAmount(bid.amountCipher, { auctionId, bidderId: bid.bidderId }),
+        createdAt: bid.createdAt,
+      });
+    } catch {
+      unreadable.push(bid.id);
+    }
+  }
+
+  if (unreadable.length > 0) {
+    await createAuditLog({
+      actorId: actor.id,
+      actorName: actor.name,
+      actorType: actor.id === 'SYSTEM' ? 'SYSTEM' : 'ADMIN',
+      action: 'AUCTION_SETTLEMENT_BLOCKED',
+      entity: 'Auction',
+      entityId: auctionId,
+      details: {
+        reason: 'Bid amounts could not be decrypted',
+        unreadableBidIds: unreadable.slice(0, 50),
+        unreadableCount: unreadable.length,
+        totalActiveBids: activeBids.length,
+      },
+    });
+    throw new Error(
+      `Cannot settle auction ${auctionId}: ${unreadable.length} of ${activeBids.length} bid ` +
+        `amounts failed to decrypt. Check BID_ENCRYPTION_KEY before settling.`
+    );
+  }
+
+  const rankings = rankUniqueBids(opened);
 
   // A ranked bid is only awarded when the round itself was a valid contest —
   // an auction may require a minimum turnout before it hands the item over.
@@ -330,12 +366,17 @@ export async function settleAuction(
     action: options.force ? 'AUCTION_RESETTLED' : 'AUCTION_SETTLED',
     entity: 'Auction',
     entityId: auctionId,
+    // The winning amount is recorded because it is published from here on, but
+    // the runner-up amounts are not: they are the tail of the bid space, and an
+    // audit row is the one place they would sit in the clear next to the
+    // re-auction that reuses the same bidders. Ranks and bid ids are enough to
+    // reconstruct the ordering from AuctionResult when a dispute needs it.
     details: {
       totalActiveBids: activeBids.length,
       uniqueBids: rankings.length,
       winnerBidId: winner?.bidId ?? null,
       winningAmount: winner?.amount ?? null,
-      topRanks: keep.slice(0, 5),
+      topRanks: keep.slice(0, 5).map((r) => ({ rank: r.rank, bidId: r.bidId })),
       reauctionState: lineageSettled ? 'CREATED' : decision.state,
       reauctionReason: lineageSettled ? undefined : decision.reason,
     },

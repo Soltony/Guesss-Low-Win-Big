@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { BID_STATUSES } from '@/lib/types';
+import { ADMIN_VIEWER, formatRevealedAmount, revealBidAmount } from '@/lib/bid-visibility';
 import { maskPhone, toNum } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -44,7 +45,9 @@ export default async function BidsPage({
       take: PAGE_SIZE,
       include: {
         bidder: { select: { id: true, phoneNumber: true, fullName: true } },
-        auction: { select: { id: true, code: true, title: true, currency: true } },
+        // `status` drives the amount column: a bid amount is only disclosed
+        // once its auction has settled.
+        auction: { select: { id: true, code: true, title: true, currency: true, status: true } },
       },
     }),
     prisma.bid.count({ where }),
@@ -63,8 +66,8 @@ export default async function BidsPage({
         title="Bids"
         description={
           auction
-            ? `Bids on #${auction.code} — ${auction.title}`
-            : 'Every bid across all auctions, including unpaid attempts.'
+            ? `Bids on #${auction.code} — ${auction.title}. Amounts stay masked until it settles.`
+            : 'Every bid across all auctions, including unpaid attempts. Amounts stay masked until their auction settles.'
         }
         breadcrumbs={
           auction
@@ -167,7 +170,7 @@ export default async function BidsPage({
                   )}
                 </td>
                 <td className="px-4 py-2.5 text-right font-bold tabular-nums">
-                  {toNum(bid.amount).toFixed(2)}
+                  {formatRevealedAmount(revealBidAmount(bid, bid.auction, ADMIN_VIEWER))}
                 </td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
                   {toNum(bid.feeAmount).toFixed(2)}

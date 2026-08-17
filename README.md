@@ -90,6 +90,8 @@ See `.env.example` for the annotated list. The ones that matter:
 | --- | --- |
 | `DATABASE_URL` | SQL Server connection string |
 | `SESSION_SECRET` | HS256 signing key for all session tokens — long and random |
+| `BID_ENCRYPTION_KEY` | **Required.** 32 bytes, base64 or hex. Opens the AES-256-GCM ciphertext bid amounts are stored as; without it no bid can be placed and no auction can settle |
+| `BID_ENCRYPTION_KEY_PREVIOUS` | Set only during a key rotation — the outgoing key, decrypt-only |
 | `TOKEN_VALIDATION_API_URL` | Super-app endpoint that resolves a bearer token to `{ phone }` |
 | `PAYMENT_URL`, `PAYMENT_KEY`, `ACCOUNT_NO`, `COMPANY_NAME`, `CALLBACK_URL` | Super-app payment gateway credentials for collecting bid fees |
 | `PAYMENT_CALLBACK_STRICT` | `true` rejects callbacks whose signature does not verify — see below |
@@ -217,8 +219,17 @@ gateway, so strict rejection defaults to **off**: mismatches are recorded as
    runner-ups), stamp `isUnique`/`rankAtSettlement` on every bid, create the
    `Winner` with a claim deadline, and move the auction to `SETTLED`.
 
-Bid amounts are `Decimal(18,2)`, not floats — float rounding would silently
-merge or split amounts and corrupt the uniqueness calculation.
+Amounts are compared as fixed 2-decimal strings, never as floats — float
+rounding would silently merge or split amounts and corrupt the uniqueness
+calculation. That same 2-decimal string is what gets encrypted, so a round trip
+through the database cannot move a bid into a different uniqueness group.
+
+Settlement is the one place every amount on an auction is opened at once. A bid
+whose ciphertext will not decrypt **stops the settlement** rather than dropping
+out of the ranking: omitting it could hand the prize to the wrong bidder with
+nothing downstream to show for it. The failure is written to the audit log as
+`AUCTION_SETTLEMENT_BLOCKED`, and the auto-settle pass carries on with the other
+auctions.
 
 A round has **no valid winner** when no amount is unique, or when it closes
 with fewer confirmed bids than `reauctionMinBids` — a turnout floor that stops
@@ -233,6 +244,83 @@ re-auction round.
 **Nothing about uniqueness is exposed before settlement.** `isUnique` is null
 while an auction runs, and `isRevealAllowed()` gates disclosure according to
 `reveal.policy` (`END_ONLY` by default, so bidders cannot probe the bid space).
+
+---
+
+## Bid amount confidentiality
+
+In a lowest-unique-bid auction the amounts *are* the game: whoever can read the
+distribution knows which amount wins. So an amount is never stored in the clear
+and never leaves the server unless the viewer is entitled to it.
+
+**At rest.** `Bid.amountCipher` holds an AES-256-GCM envelope
+(`v1.<keyId>.<iv>.<ciphertext‖tag>`) under `BID_ENCRYPTION_KEY`, which lives in
+the environment rather than the database — a stolen backup or a read-only SQL
+account yields nothing. The IV is random, so two bids of the same amount do not
+look alike and the duplicate structure cannot be read off the table. The
+envelope is bound by AAD to its auction and bidder, so a ciphertext pasted from
+one row into another fails authentication instead of quietly changing a bid.
+There is deliberately no index on the column: nothing about a bid amount can be
+grouped, ranked, or ranged over in SQL, and settlement ranks in memory instead.
+`src/lib/bid-crypto.ts` is the only module that opens one.
+
+**On disclosure.** `src/lib/bid-visibility.ts` is the single rule, and it grants
+on exactly two grounds:
+
+1. **You placed the bid.** A bidder can always read their own amounts, live or
+   not — they typed them in.
+2. **The auction has `SETTLED`.** From that point the ordinary authorization
+   rules take over: admin pages still gate on `bids.read`, the mini-app still
+   shows a bidder only their own rows.
+
+Everything else gets `null`, and the caller renders `•••`. `ENDED` does not
+reveal — an ended auction can still be re-settled or extended by a late payment
+callback, so its bid space is still live information. Withheld amounts are never
+decrypted at all, so the number does not reach the response, and there is
+nothing to find in a payload, a log, or the browser.
+
+This applies to staff too. `/admin/bids`, the bidder detail page, and an
+auction's *Latest bids* table all mask amounts until the auction settles, and
+the operator *Provisional result* panel reports the shape of the outcome — bids
+in play, how many amounts are held by exactly one bidder, whether the prize
+would be awarded — without the amounts behind it.
+
+**In logs.** The `BID_PLACED` audit entry carries no amount: audit rows are
+readable by Auditor and Compliance roles while the auction is still running,
+which would put the live distribution one table away from the people who must
+not have it. The bid row is the record, and `entityId` points at it. Settlement
+logs the *winning* amount, which is published from then on, but not the
+runner-up amounts. The `BID_CONFIRMED` SMS still quotes the bidder their own
+amount while `NotificationLog` stores it masked — see `secretVars` in
+`src/lib/notifications.ts`.
+
+**Key handling.** Treat `BID_ENCRYPTION_KEY` like a database credential, and
+keep it out of anywhere your backups land — a backup plus the key is the
+plaintext distribution. Losing it loses every recorded amount, settled auctions
+included, so keep an escrowed copy. To rotate, move the old key to
+`BID_ENCRYPTION_KEY_PREVIOUS`, put the new one in `BID_ENCRYPTION_KEY`, and
+re-run `npm run bids:encrypt`; rows opened under either key keep working
+throughout, and new bids are sealed under the new one.
+
+### Migrating an existing database
+
+The plaintext column is retired in two steps so nothing is destroyed before the
+replacement is proven. Take a backup first, and run these **before**
+`prisma db push` — the schema no longer declares `amount`, so a push would drop
+the column phase 1 reads from.
+
+```bash
+npm run bids:encrypt          # adds amountCipher, seals every row, verifies each
+                              # one opens back exactly. Bid.amount left intact.
+# deploy the new build, confirm bids and settlement read correctly
+
+npm run bids:drop-plaintext --  --dry-run   # re-verify without changing anything
+npm run bids:drop-plaintext                 # drops the index and the column
+```
+
+Phase 1 is idempotent and resumable — it only touches rows with no ciphertext,
+so an interrupted run picks up where it stopped. Phase 2 re-verifies every row
+and refuses to drop anything unless all of them round-trip exactly.
 
 ---
 
@@ -446,6 +534,8 @@ src/
     reauction-rules.ts   # pure re-auction rules (no DB — shared with the mini-app)
     reauction.ts         # re-auction rounds, carried-forward bid credits, lineage
     bidding.ts           # bid validation, caps, placement, confirmation
+    bid-crypto.ts        # AES-256-GCM envelope for bid amounts (the only opener)
+    bid-visibility.ts    # who may see a bid amount, and the masking boundary
     payment-gateway.ts   # super-app payment: signing, initiation, verification
     miniapp-connect.ts   # super-app token → bidder session
     session.ts           # admin + bidder sessions
@@ -486,21 +576,26 @@ allowed values.
 Before launch:
 
 1. Replace `SESSION_SECRET` with a long random value; never reuse the example.
-2. **Unset `ALLOW_TEST_LOGIN`.** With it on, anyone who can reach `/connect`
+2. Generate a production `BID_ENCRYPTION_KEY` from a secret store — never the
+   dev one, or a dev database restore would be readable in the clear. Escrow a
+   copy: without it, every bid amount is unrecoverable. Then run
+   `npm run bids:encrypt` and `npm run bids:drop-plaintext` against the
+   production database (backup first) to retire the plaintext column.
+3. **Unset `ALLOW_TEST_LOGIN`.** With it on, anyone who can reach `/connect`
    can sign in as any phone number.
-3. Confirm the payment callback signature format, then set
+4. Confirm the payment callback signature format, then set
    `PAYMENT_CALLBACK_STRICT=true`.
-4. Set `ALLOWED_ORIGIN` to the real mini-app origin.
-5. Sign in as the seeded Super Admin, change the password, create real
+5. Set `ALLOWED_ORIGIN` to the real mini-app origin.
+6. Sign in as the seeded Super Admin, change the password, create real
    accounts, and disable the seed account.
-6. Schedule `/api/cron/tick` every minute with a strong `CRON_SECRET`, or run
+7. Schedule `/api/cron/tick` every minute with a strong `CRON_SECRET`, or run
    `npm run run:worker` as a supervised process. Settlement falls back to the
    read paths without either, but only while the app is being used — schedule
    one so an auction that ends overnight settles overnight.
-7. Configure the SMS provider — until `SMS_API_URL` is set, messages are only
+8. Configure the SMS provider — until `SMS_API_URL` is set, messages are only
    logged.
-8. Use `prisma migrate` rather than `db push` once schema history matters.
-9. Review `frame-ancestors` in `src/proxy.ts`. It is currently `*` so the super
+9. Use `prisma migrate` rather than `db push` once schema history matters.
+10. Review `frame-ancestors` in `src/proxy.ts`. It is currently `*` so the super
    app can embed the mini-app in a webview; tighten it to the super-app origin
    if that origin is fixed.
 

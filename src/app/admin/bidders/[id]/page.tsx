@@ -9,6 +9,7 @@ import { TableCard } from '@/components/admin/data-shell';
 import { BidderModeration } from '@/components/admin/bidder-moderation';
 import { getCurrentUser } from '@/lib/session';
 import { hasPermission } from '@/lib/permissions';
+import { ADMIN_VIEWER, formatRevealedAmount, revealBidAmount } from '@/lib/bid-visibility';
 import { toNum } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -43,7 +44,9 @@ export default async function BidderDetailPage({
       where: { bidderId: id },
       orderBy: { createdAt: 'desc' },
       take: 30,
-      include: { auction: { select: { id: true, code: true, title: true } } },
+      // `status` decides whether each amount may be shown: this page is an
+      // operator view, so a bid is only legible once its auction has settled.
+      include: { auction: { select: { id: true, code: true, title: true, status: true } } },
     }),
     prisma.winner.findMany({
       where: { bidderId: id },
@@ -94,6 +97,9 @@ export default async function BidderDetailPage({
           <TableCard>
             <div className="border-b border-border px-4 py-3">
               <h2 className="font-semibold">Recent bids</h2>
+              <p className="text-xs text-muted-foreground">
+                Amounts are revealed once their auction settles.
+              </p>
             </div>
             <table className="w-full min-w-[600px] text-sm">
               <thead className="border-b border-border bg-secondary/50 text-left">
@@ -126,7 +132,7 @@ export default async function BidderDetailPage({
                       </p>
                     </td>
                     <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
-                      {toNum(bid.amount).toFixed(2)}
+                      {formatRevealedAmount(revealBidAmount(bid, bid.auction, ADMIN_VIEWER))}
                     </td>
                     <td className="px-4 py-2.5">
                       <StatusBadge status={bid.status} />

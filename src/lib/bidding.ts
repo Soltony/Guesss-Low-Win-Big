@@ -11,6 +11,7 @@ import {
 } from './reauction';
 import { participantEligibility } from './eligibility';
 import { PaymentError, initiateBidFeePayment } from './payment-gateway';
+import { BidAmountCipherError, decryptBidAmount, encryptBidAmount } from './bid-crypto';
 
 export class BidRejected extends Error {
   status: number;
@@ -170,7 +171,7 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
       bidderId: bidder.id,
       status: { in: ['ACTIVE', 'PENDING_PAYMENT'] },
     },
-    select: { amount: true, createdAt: true },
+    select: { amountCipher: true, createdAt: true },
     orderBy: { createdAt: 'desc' },
   });
 
@@ -182,8 +183,30 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
     );
   }
 
+  // The bidder's own amounts, which they are always entitled to read. Sealing
+  // and opening both happen against this (auction, bidder) pair, so a failure
+  // here means the key is wrong rather than one row being odd — and carrying on
+  // under the wrong key would write rows nobody can ever settle. Stop instead.
+  const scope = { auctionId: auction.id, bidderId: bidder.id };
+  let myAmounts: number[];
+  let amountCipher: string;
+  try {
+    myAmounts = myBids.map((b) => decryptBidAmount(b.amountCipher, scope));
+    amountCipher = encryptBidAmount(amount, scope);
+  } catch (error) {
+    if (error instanceof BidAmountCipherError) {
+      console.error('[bidding] bid amount encryption unavailable', error.message);
+      throw new BidRejected(
+        'Bidding is temporarily unavailable. Please try again shortly.',
+        'AMOUNT_CIPHER_UNAVAILABLE',
+        503
+      );
+    }
+    throw error;
+  }
+
   if (!settings['bidding.allowRepeatOwnAmount']) {
-    const already = myBids.some((b) => toNum(b.amount).toFixed(2) === amount.toFixed(2));
+    const already = myAmounts.some((value) => value.toFixed(2) === amount.toFixed(2));
     if (already) {
       throw new BidRejected(
         'You have already bid this amount. Repeating it would cancel out your own uniqueness — pick a different amount.',
@@ -224,7 +247,7 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
       data: {
         auctionId: auction.id,
         bidderId: bidder.id,
-        amount,
+        amountCipher,
         feeAmount,
         status: 'PENDING_PAYMENT',
         channel: input.isTest ? 'TEST' : 'MINIAPP',
@@ -248,10 +271,14 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
     action: 'BID_PLACED',
     entity: 'Bid',
     entityId: bid.id,
+    // The amount is deliberately absent. An audit row is readable by every
+    // Auditor and Compliance role while the auction is still running, which
+    // would put the live bid distribution one table away from the people who
+    // must not have it. The bid itself is the record — `entityId` points at it,
+    // and the amount can be opened from there once the auction settles.
     details: {
       auctionId: auction.id,
       auctionCode: auction.code,
-      amount,
       feeAmount,
       sequence,
       carriedOver,

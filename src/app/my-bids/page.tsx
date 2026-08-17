@@ -7,6 +7,7 @@ import { MyBidsList } from '@/components/miniapp/my-bids-list';
 import { getShellUser } from '@/lib/miniapp-user';
 import { getSettings } from '@/lib/settings';
 import { isRevealAllowed } from '@/lib/auction-engine';
+import { tryDecryptBidAmount } from '@/lib/bid-crypto';
 import { firstImage, toNum } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -71,7 +72,8 @@ export default async function MyBidsPage() {
       revealed: boolean;
       bids: {
         id: string;
-        amount: number;
+        /** Null only if the stored amount could not be opened — rendered masked. */
+        amount: number | null;
         feeAmount: number;
         carriedOver: boolean;
         status: string;
@@ -106,7 +108,11 @@ export default async function MyBidsPage() {
 
     groups.get(bid.auctionId)!.bids.push({
       id: bid.id,
-      amount: toNum(bid.amount),
+      // The query is scoped to this bidder, so every amount here is their own.
+      amount: tryDecryptBidAmount(bid.amountCipher, {
+        auctionId: bid.auctionId,
+        bidderId: user.bidderId,
+      }),
       feeAmount: toNum(bid.feeAmount),
       carriedOver: bid.carriedOver,
       status: bid.status,

@@ -167,7 +167,12 @@ export interface AuctionListItem {
 
 export interface MyBidView {
   id: string;
-  amount: number;
+  /**
+   * A bidder always sees their own amounts, so this is only null when the
+   * stored ciphertext could not be opened — the UI masks it rather than
+   * pretending the bid was for zero.
+   */
+  amount: number | null;
   feeAmount: number;
   /** Paid for in an earlier round of this auction, so no fee was charged again. */
   carriedOver: boolean;

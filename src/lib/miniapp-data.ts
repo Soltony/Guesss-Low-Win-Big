@@ -4,6 +4,7 @@ import { touchAuctionLifecycle } from './maintenance';
 import { carriedBidsRemaining, reauctionEligibility } from './reauction';
 import { participantEligibility } from './eligibility';
 import { firstImage, toNum } from './format';
+import { tryDecryptBidAmount } from './bid-crypto';
 import type { AuctionStatus } from './types';
 
 /**
@@ -381,14 +382,20 @@ export async function getBidderAuctionContext(
   };
 }
 
-/** The signed-in bidder's own bids on one auction. */
+/**
+ * The signed-in bidder's own bids on one auction.
+ *
+ * Scoped to `bidderId` in the query itself, which is also what makes the
+ * amounts disclosable: a bidder may always read the amounts they placed. Every
+ * row here belongs to the caller, so nothing else needs masking.
+ */
 export async function getMyBidsForAuction(bidderId: string, auctionId: string) {
   const bids = await prisma.bid.findMany({
     where: { bidderId, auctionId, status: { in: ['ACTIVE', 'PENDING_PAYMENT'] } },
     orderBy: { createdAt: 'desc' },
     select: {
       id: true,
-      amount: true,
+      amountCipher: true,
       feeAmount: true,
       carriedOver: true,
       status: true,
@@ -401,7 +408,7 @@ export async function getMyBidsForAuction(bidderId: string, auctionId: string) {
 
   return bids.map((b) => ({
     id: b.id,
-    amount: toNum(b.amount),
+    amount: tryDecryptBidAmount(b.amountCipher, { auctionId, bidderId }),
     feeAmount: toNum(b.feeAmount),
     carriedOver: b.carriedOver,
     status: b.status,

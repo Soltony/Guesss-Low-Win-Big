@@ -4,6 +4,7 @@ import { getBidderSession } from '@/lib/session';
 import { clientMeta, jsonError } from '@/lib/api';
 import { BidRejected, placeBid } from '@/lib/bidding';
 import { isRevealAllowed } from '@/lib/auction-engine';
+import { tryDecryptBidAmount } from '@/lib/bid-crypto';
 import { toNum } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -57,7 +58,12 @@ export async function GET(req: NextRequest) {
       auctionStatus: bid.auction.status,
       auctionEndAt: bid.auction.endAt.toISOString(),
       currency: bid.auction.currency,
-      amount: toNum(bid.amount),
+      // Every row is the caller's own — the query is scoped to their bidder id
+      // — and a bidder may always read the amounts they placed.
+      amount: tryDecryptBidAmount(bid.amountCipher, {
+        auctionId: bid.auctionId,
+        bidderId: session.bidderId,
+      }),
       feeAmount: toNum(bid.feeAmount),
       carriedOver: bid.carriedOver,
       status: bid.status,

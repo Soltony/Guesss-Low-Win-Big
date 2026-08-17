@@ -387,9 +387,22 @@ model Bid {
   bidderId  String
   bidder    Bidder  @relation(fields: [bidderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  // Decimal(18,2) keeps uniqueness grouping exact — float rounding would
-  // silently merge or split bid amounts and corrupt the winner calculation.
-  amount    Decimal @db.Decimal(18, 2)
+  // The bid amount, sealed with AES-256-GCM under a key that lives in the
+  // environment rather than the database — the amounts are the whole secret of
+  // a lowest-unique-bid auction, so a database read must not yield them. The
+  // envelope is bound to this row's auction and bidder, so a ciphertext cannot
+  // be moved between bids. Encoded as the fixed 2-decimal string, which keeps
+  // uniqueness grouping exact where a float would merge or split amounts and
+  // corrupt the winner calculation. Only src/lib/bid-crypto.ts opens it, and
+  // only src/lib/bid-visibility.ts decides who may see the result.
+  //
+  // There is deliberately no index on this column: a ciphertext is random, so
+  // nothing can be grouped, ranked, or ranged over in SQL. Settlement loads one
+  // auction's bids and ranks them in memory — see rankUniqueBids.
+  amountCipher String @db.NVarChar(512)
+
+  // The service fee, which is not secret: it is the same for every bid on an
+  // auction, appears on the payment receipt, and is summed for revenue reports.
   feeAmount Decimal @db.Decimal(18, 2)
 
   status   String @default("PENDING_PAYMENT") // PENDING_PAYMENT | ACTIVE | FAILED | VOID | REFUNDED
@@ -416,7 +429,6 @@ model Bid {
   result  AuctionResult?
   winner  Winner?
 
-  @@index([auctionId, amount])
   @@index([auctionId, status])
   @@index([bidderId, auctionId])
   @@index([createdAt])

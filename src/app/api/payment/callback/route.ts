@@ -5,7 +5,8 @@ import { clientMeta } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
 import { getSettings } from '@/lib/settings';
 import { notify } from '@/lib/notifications';
-import { toNum } from '@/lib/format';
+import { tryDecryptBidAmount } from '@/lib/bid-crypto';
+import { MASKED_AMOUNT, toNum } from '@/lib/format';
 import {
   PaymentError,
   resolveGatewayConfig,
@@ -201,8 +202,15 @@ export async function POST(req: NextRequest) {
   if (settings['notifications.onBidConfirmed']) {
     const bid = await prisma.bid.findUnique({
       where: { id: transaction.bidId },
-      select: { amount: true, feeAmount: true },
+      select: { auctionId: true, bidderId: true, amountCipher: true, feeAmount: true },
     });
+    const amount = bid
+      ? tryDecryptBidAmount(bid.amountCipher, {
+          auctionId: bid.auctionId,
+          bidderId: bid.bidderId,
+        })
+      : null;
+
     await notify({
       code: 'BID_CONFIRMED',
       recipient: transaction.bidder.phoneNumber,
@@ -210,12 +218,13 @@ export async function POST(req: NextRequest) {
       bidderId: transaction.bidderId,
       auctionId: transaction.auctionId ?? undefined,
       vars: {
-        amount: toNum(bid?.amount).toFixed(2),
         fee: toNum(bid?.feeAmount).toFixed(2),
         currency: transaction.auction?.currency ?? 'ETB',
         code: transaction.auction?.code ?? '',
         title: transaction.auction?.title ?? '',
       },
+      // The bidder gets their amount in the SMS; the delivery log gets a mask.
+      secretVars: { amount: amount === null ? MASKED_AMOUNT : amount.toFixed(2) },
     });
   }
 
