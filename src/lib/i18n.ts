@@ -85,7 +85,16 @@ const dictionary = {
     en: 'Accept the terms and conditions to register this bid.',
     am: 'ይህ ጨረታ እንዲመዘገብ የአጠቃቀም ውሎችን ይቀበሉ።',
   },
-  'terms.yourBid': { en: 'Your bid', am: 'የእርስዎ ጨረታ' },
+  'terms.yourBid': { en: 'Your bid amount', am: 'የጨረታ መጠንዎ' },
+  'terms.item': { en: 'Your bid item', am: 'የሚጫረቱበት ዕቃ' },
+  'terms.nonRefundable': { en: 'Non-refundable', am: 'ተመላሽ የማይደረግ' },
+  'terms.feeCovered': { en: 'Already paid', am: 'ቀድሞ ተከፍሏል' },
+  'terms.feeExplainer': {
+    en: 'The bid service fee is non-refundable and is paid from your wallet to participate in the auction. The amount you submit as a bid is not charged at the time of placing the bid. In this auction, winners are determined based on the lowest unique bid submitted among all participants. Only participants who win the auction are required to pay the amount of their winning bid, in addition to the service fee.',
+    am: 'የጨረታ አገልግሎት ክፍያው ተመላሽ የማይደረግ ሲሆን በጨረታው ለመሳተፍ ከኪስ ቦርሳዎ ይከፈላል። እንደ ጨረታ የሚያስገቡት መጠን ጨረታውን በሚያስገቡበት ጊዜ አይከፈልም። በዚህ ጨረታ አሸናፊዎች የሚወሰኑት ከሁሉም ተሳታፊዎች መካከል በቀረበው ዝቅተኛ ልዩ ጨረታ መሠረት ነው። ከአገልግሎት ክፍያው በተጨማሪ ያሸነፉበትን የጨረታ መጠን መክፈል የሚጠበቅባቸው ያሸነፉ ተሳታፊዎች ብቻ ናቸው።',
+  },
+  'terms.read': { en: 'Read', am: 'ያንብቡ' },
+  'terms.hide': { en: 'Hide', am: 'ደብቅ' },
   'terms.accept': {
     en: 'I have read and accept the Terms and Conditions.',
     am: 'የአጠቃቀም ውሎችን አንብቤ ተስማምቻለሁ።',

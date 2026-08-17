@@ -2,11 +2,18 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import * as Collapsible from '@radix-ui/react-collapsible';
 import * as Dialog from '@radix-ui/react-dialog';
 import {
+  BadgeDollarSign,
   CheckCircle2,
+  ChevronDown,
+  Coins,
+  Gavel,
+  Info,
   Loader2,
   Minus,
+  Package,
   Plus,
   ScrollText,
   ShieldCheck,
@@ -66,6 +73,10 @@ export function BidPanel({
   // until the bidder has the terms in front of them and ticks the box.
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [accepted, setAccepted] = useState(false);
+  // The full terms start folded away: the bid, the fee and the checkbox are
+  // what the bidder came to check, and a wall of clauses above them buries all
+  // three. Opening it is one tap for anyone who does want to read.
+  const [termsOpen, setTermsOpen] = useState(false);
   const [terms, setTerms] = useState<PublicTerms | null>(null);
   const [termsLoaded, setTermsLoaded] = useState(false);
   const [phase, setPhase] = useState<Phase>('idle');
@@ -90,6 +101,8 @@ export function BidPanel({
     'flex items-start gap-2.5 rounded-xl border px-3 py-2.5 leading-relaxed',
     compact ? 'mb-3 text-xs' : 'mb-3 text-sm'
   );
+  /** Label cell in the confirmation dialog's bid summary. */
+  const summaryLabel = 'flex shrink-0 items-center gap-2 text-xs font-medium text-muted-foreground';
   const currency = auction.currency === 'ETB' ? 'Br' : auction.currency;
   const remaining = Math.max(0, auction.maxBidsPerUser - bidsUsed);
   const isLive = auction.status === 'LIVE';
@@ -224,6 +237,7 @@ export function BidPanel({
 
     // Acceptance is per bid, never carried over from the last one.
     setAccepted(false);
+    setTermsOpen(false);
     setConfirmOpen(true);
     void loadTerms();
   };
@@ -514,6 +528,9 @@ export function BidPanel({
 
           <Dialog.Content className="fixed left-1/2 top-1/2 z-[70] flex max-h-[88dvh] w-[min(30rem,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-[0_24px_60px_-20px_hsl(224_47%_9%/0.6)] outline-none data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
             <div className="flex shrink-0 items-start gap-3 border-b border-border px-4 py-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                <Gavel className="h-[18px] w-[18px]" strokeWidth={2.5} />
+              </span>
               <div className="min-w-0 flex-1">
                 <Dialog.Title className="text-sm font-bold leading-tight">
                   {t('terms.confirmTitle')}
@@ -531,50 +548,118 @@ export function BidPanel({
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
-              {/* The figure being committed to, read back before it is sent. */}
-              <div className="flex items-baseline justify-between gap-3 rounded-xl border border-border bg-secondary/40 px-3 py-2.5">
-                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {t('terms.yourBid')}
-                </span>
-                <span className="text-2xl font-extrabold leading-none tabular-nums">
-                  {(Number(amount) || 0).toFixed(2)}
-                  <span className="ml-1 text-xs font-semibold text-muted-foreground">
-                    {currency}
-                  </span>
-                </span>
-              </div>
-
-              <p className="mt-2 text-center text-[11px] leading-relaxed text-muted-foreground">
-                {nextIsFree
-                  ? t('bid.freeNotice')
-                  : t('bid.feeNotice', { fee: `${auction.bidFee.toFixed(2)} ${currency}` })}
-              </p>
-
-              <div className="mt-3 overflow-hidden rounded-xl border border-border">
-                <p className="flex items-center gap-1.5 border-b border-border bg-secondary/40 px-3 py-2 text-xs font-bold">
-                  <ScrollText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 truncate">{terms?.title || t('terms.title')}</span>
-                </p>
-                <div className="max-h-52 overflow-y-auto overscroll-contain px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
-                  {!termsLoaded ? (
-                    <span className="flex items-center gap-2">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      {t('common.loading')}
-                    </span>
-                  ) : termsBody ? (
-                    <span className="whitespace-pre-line">{termsBody}</span>
-                  ) : (
-                    t('terms.unavailable')
-                  )}
+              {/* What is being committed to — item, bid, fee — read back line by
+                  line before any of it is sent. */}
+              <dl className="divide-y divide-border overflow-hidden rounded-xl border border-border">
+                <div className="flex items-start justify-between gap-3 px-3 py-2.5">
+                  <dt className={summaryLabel}>
+                    <Package className="h-4 w-4 shrink-0" />
+                    {t('terms.item')}:
+                  </dt>
+                  <dd className="min-w-0 text-right text-[13px] font-bold leading-snug text-primary">
+                    {auction.title}
+                  </dd>
                 </div>
+
+                <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+                  <dt className={summaryLabel}>
+                    <Coins className="h-4 w-4 shrink-0" />
+                    {t('terms.yourBid')}:
+                  </dt>
+                  <dd className="shrink-0 text-lg font-extrabold leading-none tabular-nums text-success">
+                    {(Number(amount) || 0).toFixed(2)}
+                    <span className="ml-1 text-xs font-semibold">{currency}</span>
+                  </dd>
+                </div>
+
+                <div className="flex items-start justify-between gap-3 px-3 py-2.5">
+                  <dt className={cn(summaryLabel, 'mt-0.5')}>
+                    <BadgeDollarSign className="h-4 w-4 shrink-0" />
+                    {t('auction.bidFee')}:
+                  </dt>
+                  <dd className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+                    <span
+                      className={cn(
+                        'text-lg font-extrabold leading-none tabular-nums',
+                        nextIsFree ? 'text-success' : 'text-destructive'
+                      )}
+                    >
+                      {(nextIsFree ? 0 : auction.bidFee).toFixed(2)}
+                      <span className="ml-1 text-xs font-semibold">{currency}</span>
+                    </span>
+                    <span
+                      className={cn(
+                        'rounded-full border px-2 py-0.5 text-[10px] font-bold leading-tight',
+                        nextIsFree
+                          ? 'border-success/40 bg-success/10 text-success'
+                          : 'border-destructive/40 bg-destructive/10 text-destructive'
+                      )}
+                    >
+                      {nextIsFree ? t('terms.feeCovered') : t('terms.nonRefundable')}
+                    </span>
+                  </dd>
+                </div>
+              </dl>
+
+              {/* What the fee buys and what it does not, in the bidder's words:
+                  the amount typed above is not charged now, only the fee is. */}
+              <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-primary/25 bg-primary/[0.06] px-3 py-2.5">
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  {nextIsFree && (
+                    <span className="mb-1 block font-semibold text-success">
+                      {t('bid.freeNotice')}
+                    </span>
+                  )}
+                  {t('terms.feeExplainer')}
+                </p>
               </div>
+
+              <Collapsible.Root
+                open={termsOpen}
+                onOpenChange={setTermsOpen}
+                className="mt-3 overflow-hidden rounded-xl border border-border"
+              >
+                <Collapsible.Trigger className="flex w-full items-center gap-2 bg-secondary/40 px-3 py-2.5 text-left text-xs font-bold transition-colors hover:bg-secondary">
+                  <ScrollText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate">
+                    {terms?.title || t('terms.title')}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-1 text-[11px] font-semibold text-muted-foreground">
+                    {termsOpen ? t('terms.hide') : t('terms.read')}
+                    <ChevronDown
+                      className={cn('h-3.5 w-3.5 transition-transform', termsOpen && 'rotate-180')}
+                    />
+                  </span>
+                </Collapsible.Trigger>
+
+                <Collapsible.Content className="border-t border-border">
+                  <div className="max-h-52 overflow-y-auto overscroll-contain px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+                    {!termsLoaded ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        {t('common.loading')}
+                      </span>
+                    ) : termsBody ? (
+                      <span className="whitespace-pre-line">{termsBody}</span>
+                    ) : (
+                      t('terms.unavailable')
+                    )}
+                  </div>
+                </Collapsible.Content>
+              </Collapsible.Root>
             </div>
 
             <div
               className="shrink-0 border-t border-border px-4 pt-3"
               style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)' }}
             >
-              <label className="flex cursor-pointer items-start gap-2.5 text-xs font-medium leading-relaxed">
+              <label
+                className={cn(
+                  'flex cursor-pointer items-start gap-2.5 rounded-xl border px-3 py-2.5 text-xs font-medium leading-relaxed transition-colors',
+                  accepted ? 'border-primary/50 bg-primary/5' : 'border-border hover:bg-secondary/50'
+                )}
+              >
                 <input
                   type="checkbox"
                   checked={accepted}
@@ -593,19 +678,18 @@ export function BidPanel({
                   onClick={confirmAndSubmit}
                   disabled={!accepted}
                   className={cn(
-                    'gl-gold flex-[1.6] rounded-xl px-3 py-3 text-sm font-bold',
+                    'gl-gold flex flex-[1.6] items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-bold',
                     !accepted && 'cursor-not-allowed opacity-50'
                   )}
                 >
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
                   {t('terms.confirmCta')}
                 </button>
               </div>
 
-              {!accepted && (
-                <p className="mt-2 text-center text-[11px] leading-snug text-muted-foreground">
-                  {t('terms.acceptRequired')}
-                </p>
-              )}
+              <p className="mt-2 text-center text-[11px] leading-snug text-muted-foreground">
+                {t('terms.acceptRequired')}
+              </p>
             </div>
           </Dialog.Content>
         </Dialog.Portal>
