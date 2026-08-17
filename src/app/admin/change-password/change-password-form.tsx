@@ -50,7 +50,16 @@ export function ChangePasswordForm({ required }: { required: boolean }) {
         return;
       }
 
-      router.replace(data.redirectTo || '/admin');
+      const target = data.redirectTo || '/admin';
+
+      if (required) {
+        // The server signed this client out, so leave with a full page load to
+        // drop the client router cache of the authenticated screens.
+        window.location.replace(target);
+        return;
+      }
+
+      router.replace(target);
       router.refresh();
     } catch {
       setError('Network error. Please try again.');

@@ -6,8 +6,15 @@ import { LogoWordmark } from '@/components/icons';
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Admin sign in' };
 
-export default async function AdminLoginPage() {
-  const user = await getCurrentUser({ allowRefresh: false });
+export default async function AdminLoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ passwordChanged?: string }>;
+}) {
+  const [user, params] = await Promise.all([
+    getCurrentUser({ allowRefresh: false }),
+    searchParams,
+  ]);
   if (user) redirect(user.passwordChangeRequired ? '/admin/change-password' : '/admin');
 
   return (
@@ -17,7 +24,11 @@ export default async function AdminLoginPage() {
           <LogoWordmark className="justify-center text-2xl text-primary" />
           <p className="mt-2 text-sm text-muted-foreground">Auction operations console</p>
         </div>
-        <LoginForm />
+        <LoginForm
+          notice={
+            params.passwordChanged ? 'Password updated. Sign in with your new password.' : null
+          }
+        />
         <p className="mt-6 text-center text-xs text-muted-foreground">
           Access is logged. Unauthorised use is prohibited.
         </p>

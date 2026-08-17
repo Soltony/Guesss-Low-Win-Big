@@ -2,14 +2,14 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-export function LoginForm() {
+export function LoginForm({ notice }: { notice?: string | null }) {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -56,6 +56,13 @@ export function LoginForm() {
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {!error && notice && (
+            <Alert>
+              <CheckCircle2 className="h-4 w-4" />
+              <AlertDescription>{notice}</AlertDescription>
             </Alert>
           )}
 
