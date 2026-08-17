@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import { format } from 'date-fns';
 import prisma from './prisma';
 import { getSettings } from './settings';
@@ -85,6 +85,25 @@ export function buildSignature(params: {
   return createHash('sha256').update(signatureString, 'utf8').digest('hex');
 }
 
+/**
+ * Constant-time comparison of two hex digests.
+ *
+ * `===` on strings returns as soon as two characters differ, so the time it
+ * takes leaks how many leading characters were right — enough to reconstruct a
+ * signature one character at a time given enough attempts. Comparing every byte
+ * regardless removes that channel.
+ */
+export function safeEqualHex(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+
+  const left = Buffer.from(a.toLowerCase(), 'utf8');
+  const right = Buffer.from(b.toLowerCase(), 'utf8');
+  // `timingSafeEqual` throws on a length mismatch, which would itself leak the
+  // length. Both sides are hashed to a fixed width first so it never can.
+  const digest = (value: Buffer) => createHash('sha256').update(value).digest();
+  return timingSafeEqual(digest(left), digest(right));
+}
+
 /** Recomputes the signature of an inbound callback so we can detect tampering. */
 export function verifyCallbackSignature(
   body: Record<string, any>,
@@ -103,7 +122,7 @@ export function verifyCallbackSignature(
   });
 
   return {
-    valid: Boolean(received) && String(received).toLowerCase() === expected.toLowerCase(),
+    valid: safeEqualHex(received ? String(received) : null, expected),
     expected,
     received: received ? String(received) : null,
   };

@@ -11,6 +11,7 @@ import {
   uuid,
 } from './jwt';
 import { parsePermissions } from './permissions';
+import { getSettings } from './settings';
 import type { SessionUser } from './types';
 
 export const ACCESS_COOKIE = 'accessToken';
@@ -24,9 +25,79 @@ function isProd() {
 const cookieBase = {
   httpOnly: true,
   secure: isProd(),
-  sameSite: 'lax' as const,
   path: '/',
 };
+
+/**
+ * Admin cookies are `Strict`: the console is only ever reached by navigating
+ * within it, so no legitimate flow needs the cookie on a cross-site navigation,
+ * and withholding it there removes the last cross-site request that could carry
+ * a session. Following an external link to a deep admin URL still works — it
+ * lands on the login page, which is same-site and so sees the cookie and
+ * forwards on.
+ */
+const adminCookie = { ...cookieBase, sameSite: 'strict' as const };
+
+/**
+ * The mini-app cookie stays `Lax`: the super app hands control over by
+ * navigating to us cross-site, and `Strict` would drop the session on exactly
+ * that first request. `Lax` still withholds it from cross-site POSTs, and the
+ * origin check in the middleware covers what remains.
+ */
+const bidderCookie = { ...cookieBase, sameSite: 'lax' as const };
+
+/**
+ * Idle and absolute session limits.
+ *
+ * Rotating a refresh token also extends its expiry, so without these an active
+ * session never ends — a stolen token stays usable for as long as the thief
+ * keeps using it. The idle limit closes an unattended session; the absolute one
+ * caps the lifetime of even a busy session, forcing periodic re-authentication.
+ *
+ * Both come from Settings (`getSettings` caches for 15s, so this costs nothing
+ * on the request path) and are clamped to the range the setting declares, so a
+ * bad stored value cannot disable the limit it configures.
+ */
+const IDLE_MINUTES_DEFAULT = 30;
+const ABSOLUTE_HOURS_DEFAULT = 12;
+
+/** Why a session stopped being valid, for the audit trail. */
+export type SessionExpiry = 'idle' | 'absolute';
+
+function clamp(value: unknown, min: number, max: number, fallback: number) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+async function sessionLimits() {
+  const settings = await getSettings();
+  return {
+    idleMs:
+      clamp(settings['security.idleTimeoutMinutes'], 5, 480, IDLE_MINUTES_DEFAULT) * 60_000,
+    absoluteMs:
+      clamp(settings['security.absoluteSessionHours'], 1, 72, ABSOLUTE_HOURS_DEFAULT) * 3_600_000,
+  };
+}
+
+async function sessionExpiry(record: {
+  lastActivity: Date;
+  createdAt: Date;
+}): Promise<SessionExpiry | null> {
+  const { idleMs, absoluteMs } = await sessionLimits();
+  const now = Date.now();
+  if (now - record.lastActivity.getTime() > idleMs) return 'idle';
+  if (now - record.createdAt.getTime() > absoluteMs) return 'absolute';
+  return null;
+}
+
+/** Ends a session that outlived a limit, so the next request cannot revive it. */
+async function expireSession(sessionId: string, reason: SessionExpiry) {
+  await prisma.session
+    .update({ where: { id: sessionId }, data: { revoked: true, jti: null } })
+    .catch(() => null);
+  console.info('[session] expired', { sessionId, reason });
+}
 
 // --------------------------------------
 // ADMIN SESSIONS (DB-backed, rotating refresh token)
@@ -74,10 +145,10 @@ export async function createAdminSession(
 
   const store = await cookies();
   store.set(ACCESS_COOKIE, accessToken, {
-    ...cookieBase,
+    ...adminCookie,
     expires: expiryFromMinutes(ACCESS_TOKEN_MINUTES),
   });
-  store.set(REFRESH_COOKIE, refreshToken, { ...cookieBase, expires: refreshExpiresAt });
+  store.set(REFRESH_COOKIE, refreshToken, { ...adminCookie, expires: refreshExpiresAt });
 
   return { accessToken, refreshToken, sessionId: record.id };
 }
@@ -119,6 +190,12 @@ export async function getAdminSession(options?: {
         if (payload.jti && record.jti && payload.jti !== record.jti) return null;
         if (!refresh || refresh !== record.refreshToken) return null;
 
+        const expired = await sessionExpiry(record);
+        if (expired) {
+          await expireSession(record.id, expired);
+          return null;
+        }
+
         await prisma.session.update({
           where: { id: record.id },
           data: { lastActivity: new Date() },
@@ -132,6 +209,14 @@ export async function getAdminSession(options?: {
 
   const record = await prisma.session.findUnique({ where: { refreshToken: refresh } });
   if (!record || record.revoked || record.expiresAt < new Date()) return null;
+
+  // Rotating a refresh token pushes its expiry out, so `expiresAt` alone can
+  // never end an active session. The idle and absolute limits are what do.
+  const expired = await sessionExpiry(record);
+  if (expired) {
+    await expireSession(record.id, expired);
+    return null;
+  }
 
   const user = await prisma.user.findUnique({ where: { id: record.userId } });
   if (!user) return null;
@@ -176,10 +261,10 @@ export async function getAdminSession(options?: {
   const newAccess = await encryptJwt({ ...payload }, ACCESS_TOKEN_EXP);
 
   store.set(ACCESS_COOKIE, newAccess, {
-    ...cookieBase,
+    ...adminCookie,
     expires: expiryFromMinutes(ACCESS_TOKEN_MINUTES),
   });
-  store.set(REFRESH_COOKIE, newRefresh, { ...cookieBase, expires: refreshExpiresAt });
+  store.set(REFRESH_COOKIE, newRefresh, { ...adminCookie, expires: refreshExpiresAt });
 
   return payload;
 }
@@ -239,9 +324,9 @@ export async function deleteAdminSession() {
     }
   }
 
-  const expired = new Date(0);
-  store.set(ACCESS_COOKIE, '', { ...cookieBase, expires: expired });
-  store.set(REFRESH_COOKIE, '', { ...cookieBase, expires: expired });
+  const expiredAt = new Date(0);
+  store.set(ACCESS_COOKIE, '', { ...adminCookie, expires: expiredAt });
+  store.set(REFRESH_COOKIE, '', { ...adminCookie, expires: expiredAt });
 }
 
 // --------------------------------------
@@ -269,7 +354,7 @@ export async function createBidderSession(payload: BidderSessionPayload) {
   const expires = expiryFromDays(1);
   const jwt = await encryptJwt({ sid: uuid(), ...payload }, '1d');
   const store = await cookies();
-  store.set(MINIAPP_COOKIE, jwt, { ...cookieBase, expires });
+  store.set(MINIAPP_COOKIE, jwt, { ...bidderCookie, expires });
   return jwt;
 }
 
@@ -286,5 +371,5 @@ export async function getBidderSession(): Promise<BidderSessionPayload | null> {
 
 export async function deleteBidderSession() {
   const store = await cookies();
-  store.set(MINIAPP_COOKIE, '', { ...cookieBase, expires: new Date(0) });
+  store.set(MINIAPP_COOKIE, '', { ...bidderCookie, expires: new Date(0) });
 }

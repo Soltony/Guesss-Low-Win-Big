@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { createBidderSession } from '@/lib/session';
 import { createAuditLog } from '@/lib/audit-log';
-import { clientMeta, jsonError } from '@/lib/api';
+import { clientMeta, enforceRateLimit, jsonError } from '@/lib/api';
+import { RATE_LIMITS } from '@/lib/rate-limit';
+import { secureRandomInt } from '@/lib/jwt';
 import { normalizePhone } from '@/lib/format';
 import { getSettings } from '@/lib/settings';
 import { TEST_PHONE_PREFIX, isTestLoginEnabled } from '@/lib/test-login';
@@ -19,6 +21,12 @@ export async function POST(req: NextRequest) {
   }
 
   const meta = clientMeta(req);
+
+  // This endpoint creates a bidder row per unseen number, so an unbounded caller
+  // could fill the table. Capped even though it only runs in test environments.
+  const limited = enforceRateLimit('test-connect', meta.ipAddress, RATE_LIMITS.testConnect);
+  if (limited) return limited;
+
   const body = await req.json().catch(() => ({}));
 
   const rawPhone = String(body?.phone || '').trim();
@@ -28,7 +36,7 @@ export async function POST(req: NextRequest) {
   // fresh bidder in one click.
   const phoneNumber = rawPhone
     ? normalizePhone(rawPhone)
-    : `${TEST_PHONE_PREFIX}${String(Math.floor(Math.random() * 100_000)).padStart(5, '0')}`;
+    : `${TEST_PHONE_PREFIX}${String(secureRandomInt(100_000)).padStart(5, '0')}`;
 
   if (phoneNumber.length < 9) {
     return jsonError('Enter a valid phone number, or leave it blank for a random one.', 400);

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { confirmBid, failBid } from '@/lib/bidding';
-import { clientMeta } from '@/lib/api';
+import { clientMeta, enforceRateLimit } from '@/lib/api';
+import { RATE_LIMITS } from '@/lib/rate-limit';
 import { createAuditLog } from '@/lib/audit-log';
 import { getSettings } from '@/lib/settings';
 import { notify } from '@/lib/notifications';
@@ -27,6 +28,13 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(req: NextRequest) {
   const meta = clientMeta(req);
+
+  // Publicly reachable by necessity — the gateway must be able to call it. The
+  // ceiling is set well above the gateway's own retry behaviour, so it only
+  // ever engages against a flood.
+  const limited = enforceRateLimit('payment-callback', meta.ipAddress, RATE_LIMITS.paymentCallback);
+  if (limited) return limited;
+
   let body: Record<string, any>;
 
   try {

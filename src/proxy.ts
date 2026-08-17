@@ -8,21 +8,24 @@ import {
   moduleKeyFor,
   moduleKeyForApiPath,
 } from '@/lib/route-permissions';
+import { checkRequestOrigin } from '@/lib/request-origin';
 import type { Permissions } from '@/lib/types';
 
+/**
+ * Everything except Next's own static output.
+ *
+ * Listing the guarded routes individually left the public mini-app pages —
+ * `/connect`, `/auctions`, `/auctions/[code]` — outside the middleware, and so
+ * with no Content-Security-Policy at all. Those pages render operator-supplied
+ * auction copy, which is precisely where a CSP earns its keep. Matching broadly
+ * and letting unguarded paths fall through to `passthrough()` means a route
+ * added later is covered by default instead of being silently bare.
+ *
+ * `_next/static` and `_next/image` are excluded because they are immutable
+ * assets that need no policy of their own and are requested constantly.
+ */
 export const config = {
-  matcher: [
-    '/',
-    '/api/:path*',
-    '/admin',
-    '/admin/:path*',
-    '/my-bids',
-    '/my-bids/:path*',
-    '/wins',
-    '/wins/:path*',
-    '/profile',
-    '/profile/:path*',
-  ],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 };
 
 const PROTECTED_ADMIN_PREFIXES = ['/admin', '/api/admin'];
@@ -35,18 +38,75 @@ const PROTECTED_MINIAPP_API = [
   '/api/miniapp/wins',
 ];
 
+/**
+ * Browser features the app never uses. Anything omitted from a Permissions-Policy
+ * stays enabled, so the list is exhaustive rather than illustrative: an injected
+ * script must not be able to reach for a camera or a payment handler.
+ */
+const PERMISSIONS_POLICY = [
+  'accelerometer=()',
+  'ambient-light-sensor=()',
+  'autoplay=()',
+  'battery=()',
+  'camera=()',
+  'display-capture=()',
+  'document-domain=()',
+  'encrypted-media=()',
+  'fullscreen=(self)',
+  'geolocation=()',
+  'gyroscope=()',
+  'magnetometer=()',
+  'microphone=()',
+  'midi=()',
+  'payment=()',
+  'picture-in-picture=()',
+  'publickey-credentials-get=()',
+  'screen-wake-lock=()',
+  'serial=()',
+  'usb=()',
+  'xr-spatial-tracking=()',
+].join(', ');
+
 function securityHeaders(res: NextResponse, csp: string, nonce: string) {
   res.headers.set('Content-Security-Policy', csp);
   res.headers.set('x-nonce', nonce);
   res.headers.set('X-Content-Type-Options', 'nosniff');
   res.headers.set('Referrer-Policy', 'no-referrer');
-  res.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.headers.set('Permissions-Policy', PERMISSIONS_POLICY);
   res.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+  // Legacy sibling of `frame-ancestors`, for browsers that predate CSP level 2.
+  // Only DENY and SAMEORIGIN exist here, so it is set where the CSP is that
+  // strict and left off where the mini-app is embeddable — a wrong value would
+  // block the embed in old browsers that the CSP already permits in new ones.
+  const frameAncestors = csp.match(/frame-ancestors ([^;]+)/)?.[1]?.trim();
+  if (frameAncestors === "'none'") res.headers.set('X-Frame-Options', 'DENY');
+  else if (frameAncestors === "'self'") res.headers.set('X-Frame-Options', 'SAMEORIGIN');
+
+  res.headers.set('X-Permitted-Cross-Domain-Policies', 'none');
+  res.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+  res.headers.set('Cross-Origin-Resource-Policy', 'same-origin');
   return res;
 }
 
 function isUnder(path: string, prefixes: string[]) {
   return prefixes.some((p) => path === p || path.startsWith(p + '/'));
+}
+
+/**
+ * Who may frame a given page.
+ *
+ * The admin console is never embedded, so it is pinned to 'none' — that is the
+ * surface where a clickjacked click approves a payout. The mini-app runs inside
+ * the super app, which may present it in a frame, so its policy is configurable:
+ * set FRAME_ANCESTORS to the super app's origin. The default of 'self' is the
+ * safe end of that choice, not a wildcard.
+ */
+function frameAncestorsFor(path: string): string {
+  if (isUnder(path, ['/admin', '/api/admin'])) return "'none'";
+
+  const configured = process.env.FRAME_ANCESTORS?.trim();
+  if (!configured || configured === '*') return "'self'";
+  return configured;
 }
 
 export default async function middleware(req: NextRequest) {
@@ -65,7 +125,7 @@ export default async function middleware(req: NextRequest) {
     font-src 'self' https://fonts.gstatic.com data:;
     img-src 'self' data: blob: https:;
     connect-src 'self';
-    frame-ancestors *;
+    frame-ancestors ${frameAncestorsFor(path)};
     media-src 'self';
     object-src 'none';
     base-uri 'self';
@@ -99,6 +159,29 @@ export default async function middleware(req: NextRequest) {
       nonce
     );
   };
+
+  // ----------------------------------------
+  // CSRF: a state-changing request must come from this site
+  // ----------------------------------------
+  // Ahead of every other rule, so it covers admin APIs, mini-app APIs and form
+  // posts alike without each having to remember. Safe methods and the two
+  // machine-to-machine endpoints are exempt inside `checkRequestOrigin`.
+  const origin = checkRequestOrigin(req);
+  if (!origin.ok) {
+    console.warn('[middleware] blocked cross-origin request', {
+      path,
+      method: req.method,
+      reason: origin.reason,
+    });
+    return securityHeaders(
+      NextResponse.json(
+        { error: 'This request did not come from an allowed origin.' },
+        { status: 403 }
+      ),
+      csp,
+      nonce
+    );
+  }
 
   // ----------------------------------------
   // ROOT: the front door is the admin login

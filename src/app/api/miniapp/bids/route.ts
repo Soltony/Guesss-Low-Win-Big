@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getBidderSession } from '@/lib/session';
-import { clientMeta, jsonError } from '@/lib/api';
+import { clientMeta, enforceRateLimit, jsonError } from '@/lib/api';
+import { RATE_LIMITS } from '@/lib/rate-limit';
 import { BidRejected, placeBid } from '@/lib/bidding';
 import { isRevealAllowed } from '@/lib/auction-engine';
 import { tryDecryptBidAmount } from '@/lib/bid-crypto';
@@ -82,6 +83,13 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await getBidderSession();
   if (!session) return jsonError('Not authenticated', 401);
+
+  // Keyed on the bidder rather than the address: every bid charges a fee to
+  // this bidder's wallet, and the bidder is the thing an attacker cannot swap
+  // by changing networks. It also bounds how fast one account can be used to
+  // probe the amount space of a lowest-unique-bid auction.
+  const limited = enforceRateLimit('place-bid', session.bidderId, RATE_LIMITS.placeBid);
+  if (limited) return limited;
 
   const body = await req.json().catch(() => ({}));
   const auctionId = String(body?.auctionId || '');

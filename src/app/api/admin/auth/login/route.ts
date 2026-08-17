@@ -4,7 +4,8 @@ import { createAdminSession } from '@/lib/session';
 import { verifyPassword } from '@/lib/admin-users';
 import { createAuditLog } from '@/lib/audit-log';
 import { getSettings } from '@/lib/settings';
-import { clientMeta, jsonError } from '@/lib/api';
+import { clientMeta, enforceRateLimit, jsonError } from '@/lib/api';
+import { RATE_LIMITS, reset as resetRateLimit } from '@/lib/rate-limit';
 import { parsePermissions, firstAllowedPath } from '@/lib/permissions';
 import { ADMIN_ROUTES, moduleKeyFor } from '@/lib/route-permissions';
 
@@ -16,6 +17,22 @@ const GENERIC_FAILURE = 'Invalid email or password.';
 
 export async function POST(req: NextRequest) {
   const meta = clientMeta(req);
+
+  // Per-account lockout below stops one account being ground down. This stops
+  // the other half of the same attack: one client spraying a common password
+  // across many accounts, where no single account ever reaches its threshold.
+  const limited = enforceRateLimit('admin-login', meta.ipAddress, RATE_LIMITS.adminLogin);
+  if (limited) {
+    await createAuditLog({
+      actorId: 'ANONYMOUS',
+      actorType: 'SYSTEM',
+      action: 'LOGIN_RATE_LIMITED',
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    });
+    return limited;
+  }
+
   const body = await req.json().catch(() => ({}));
   const email = String(body?.email || '').trim().toLowerCase();
   const password = String(body?.password || '');
@@ -95,6 +112,10 @@ export async function POST(req: NextRequest) {
     where: { id: user.id },
     data: { failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() },
   });
+
+  // A proven-good sign-in clears the window, so a shared office address is not
+  // rationed for everyone because one person mistyped their password earlier.
+  resetRateLimit(`admin-login:${meta.ipAddress ?? 'unknown'}`);
 
   await createAdminSession(user.id, meta);
 

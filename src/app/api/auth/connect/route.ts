@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { MiniAppConnectError, connectMiniAppSession } from '@/lib/miniapp-connect';
-import { clientMeta, jsonError } from '@/lib/api';
+import { clientMeta, enforceRateLimit, jsonError } from '@/lib/api';
+import { RATE_LIMITS } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,6 +10,14 @@ export const dynamic = 'force-dynamic';
  * Called by /connect once the webview hands us the Authorization header.
  */
 export async function POST(req: NextRequest) {
+  const meta = clientMeta(req);
+
+  // Unauthenticated by definition — this is where a session is obtained — and
+  // every call reaches the super app's token service, so it is both a brute
+  // force target and a way to use us to flood a third party.
+  const limited = enforceRateLimit('connect', meta.ipAddress, RATE_LIMITS.connect);
+  if (limited) return limited;
+
   let superAppToken: string | undefined;
 
   try {
@@ -23,7 +32,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await connectMiniAppSession(superAppToken, clientMeta(req));
+    const result = await connectMiniAppSession(superAppToken, meta);
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof MiniAppConnectError) {

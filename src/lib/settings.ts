@@ -595,6 +595,32 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     step: 1,
   },
   {
+    key: 'security.idleTimeoutMinutes',
+    label: 'Admin idle timeout (minutes)',
+    description:
+      'An admin session with no activity for this long is ended, and the admin must sign in again.',
+    category: 'security',
+    type: 'number',
+    default: 30,
+    min: 5,
+    max: 480,
+    step: 5,
+    sensitive: true,
+  },
+  {
+    key: 'security.absoluteSessionHours',
+    label: 'Maximum admin session length (hours)',
+    description:
+      'An admin session ends this long after sign-in however active it has been, forcing re-authentication.',
+    category: 'security',
+    type: 'number',
+    default: 12,
+    min: 1,
+    max: 72,
+    step: 1,
+    sensitive: true,
+  },
+  {
     key: 'security.requireApprovalForPublish',
     label: 'Maker-checker on publishing auctions',
     description:

@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runMaintenance } from '@/lib/maintenance';
+import { safeEqualHex } from '@/lib/payment-gateway';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
+/** Rejected outright, so a deployment that forgot to set the secret is not open. */
+const PLACEHOLDER_SECRETS = new Set(['change-me', 'secret', '']);
 
 /**
  * Scheduled maintenance tick. Point a cron job (or the platform scheduler) at
@@ -15,9 +20,16 @@ export const dynamic = 'force-dynamic';
  * duplicated tick is harmless.
  */
 export async function POST(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
+  const secret = process.env.CRON_SECRET?.trim() ?? '';
   const provided = req.headers.get('x-cron-secret');
-  if (!secret || provided !== secret) {
+
+  if (PLACEHOLDER_SECRETS.has(secret)) {
+    console.error('[cron] CRON_SECRET is unset or still the placeholder — refusing to run.');
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+  // Compared in constant time: this endpoint runs settlement, so the secret is
+  // worth guessing character by character if the comparison lets you.
+  if (!safeEqualHex(provided, secret)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 

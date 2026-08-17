@@ -3,13 +3,19 @@ import prisma from '@/lib/prisma';
 import { getCurrentUser, revokeAllUserSessions, deleteAdminSession } from '@/lib/session';
 import { hashPassword, validatePassword, verifyPassword } from '@/lib/admin-users';
 import { createAuditLog } from '@/lib/audit-log';
-import { clientMeta, jsonError } from '@/lib/api';
+import { clientMeta, enforceRateLimit, jsonError } from '@/lib/api';
+import { RATE_LIMITS } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser({ allowRefresh: false });
   if (!user) return jsonError('Not authenticated', 401);
+
+  // The current-password check makes this a password-guessing oracle for anyone
+  // who has a session but not the password — a borrowed unlocked laptop.
+  const limited = enforceRateLimit('password-change', user.id, RATE_LIMITS.passwordChange);
+  if (limited) return limited;
 
   const body = await req.json().catch(() => ({}));
   const currentPassword = String(body?.currentPassword || '');
