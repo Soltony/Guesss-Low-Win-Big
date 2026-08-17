@@ -12,6 +12,7 @@ import type { Permissions } from '@/lib/types';
 
 export const config = {
   matcher: [
+    '/',
     '/api/:path*',
     '/admin',
     '/admin/:path*',
@@ -98,6 +99,23 @@ export default async function middleware(req: NextRequest) {
       nonce
     );
   };
+
+  // ----------------------------------------
+  // ROOT: the front door is the admin login
+  // ----------------------------------------
+  // A super-app webview never lands on "/" cold — it enters at /connect, which
+  // exchanges the super-app token for the bidder cookie and only then hands
+  // control to the mini-app home. So a request for "/" that already carries
+  // that cookie came through /connect and renders the mini-app; anything else
+  // is a browser opening the site, which belongs on the admin login. Deep
+  // mini-app routes are untouched and keep their own rules below.
+  if (path === '/' && !req.cookies.get('bidderSession')?.value) {
+    return securityHeaders(
+      NextResponse.redirect(new URL('/admin/login', req.nextUrl.origin)),
+      csp,
+      nonce
+    );
+  }
 
   // ----------------------------------------
   // MINI-APP: requires a super-app-issued bidder session

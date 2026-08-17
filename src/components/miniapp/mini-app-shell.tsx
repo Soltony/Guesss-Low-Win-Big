@@ -53,7 +53,14 @@ function TopBar({ user }: { user: ShellUser | null }) {
   return (
     <header className="gl-ink sticky top-0 z-30">
       <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-4 py-3">
-        <Link href="/" className="flex items-center gap-2" aria-label="GuessLow home">
+        {/* Connected bidders get the mini-app home; a visitor browsing without a
+            session would be bounced from `/` to the admin login, so they get the
+            auction list instead. */}
+        <Link
+          href={user ? '/' : '/auctions'}
+          className="flex items-center gap-2"
+          aria-label="GuessLow home"
+        >
           <Logo className="h-8 w-8 text-black" />
           <span className="text-[17px] font-bold tracking-tight">
             Guess<span className="text-primary">Low</span>

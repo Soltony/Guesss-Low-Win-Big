@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import {
-  getCurrentUser,
-  revokeAllUserSessions,
-  createAdminSession,
-  deleteAdminSession,
-} from '@/lib/session';
+import { getCurrentUser, revokeAllUserSessions, deleteAdminSession } from '@/lib/session';
 import { hashPassword, validatePassword, verifyPassword } from '@/lib/admin-users';
 import { createAuditLog } from '@/lib/audit-log';
 import { clientMeta, jsonError } from '@/lib/api';
@@ -53,16 +48,10 @@ export async function POST(req: NextRequest) {
     data: { password: await hashPassword(newPassword), passwordChangeRequired: false },
   });
 
-  const wasForced = user.passwordChangeRequired;
-
-  // Every session is invalidated. A forced change also signs this client out, so
-  // the user has to sign back in with the new password; otherwise it gets a fresh one.
+  // Every session is invalidated, this client's included — a new password means
+  // signing in again with it, so a leaked token cannot outlive the change.
   await revokeAllUserSessions(user.id);
-  if (wasForced) {
-    await deleteAdminSession();
-  } else {
-    await createAdminSession(user.id, clientMeta(req));
-  }
+  await deleteAdminSession();
 
   await createAuditLog({
     actorId: user.id,
@@ -71,8 +60,5 @@ export async function POST(req: NextRequest) {
     ...clientMeta(req),
   });
 
-  return NextResponse.json({
-    ok: true,
-    redirectTo: wasForced ? '/admin/login?passwordChanged=1' : '/admin',
-  });
+  return NextResponse.json({ ok: true, redirectTo: '/admin/login?passwordChanged=1' });
 }

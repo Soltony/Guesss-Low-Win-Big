@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { AlertCircle, Check, Loader2, X } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -20,7 +19,6 @@ const RULES = [
 ];
 
 export function ChangePasswordForm({ required }: { required: boolean }) {
-  const router = useRouter();
   const [form, setForm] = useState({
     currentPassword: '',
     newPassword: '',
@@ -50,17 +48,9 @@ export function ChangePasswordForm({ required }: { required: boolean }) {
         return;
       }
 
-      const target = data.redirectTo || '/admin';
-
-      if (required) {
-        // The server signed this client out, so leave with a full page load to
-        // drop the client router cache of the authenticated screens.
-        window.location.replace(target);
-        return;
-      }
-
-      router.replace(target);
-      router.refresh();
+      // The server signed this client out, so leave with a full page load to
+      // drop the client router cache of the authenticated screens.
+      window.location.replace(data.redirectTo || '/admin/login');
     } catch {
       setError('Network error. Please try again.');
     } finally {
@@ -75,7 +65,7 @@ export function ChangePasswordForm({ required }: { required: boolean }) {
         <CardDescription>
           {required
             ? 'Your account uses a temporary password that must be replaced.'
-            : 'Changing your password signs out every other session.'}
+            : 'Changing your password signs out every session, including this one.'}
         </CardDescription>
       </CardHeader>
       <CardContent>

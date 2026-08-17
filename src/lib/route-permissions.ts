@@ -164,8 +164,10 @@ export function moduleKeyForApiPath(path: string): string | undefined {
 
 /**
  * Mini-app pages that require a super-app session.
- * Browsing (home, auction details) stays open so the super app can deep-link
- * into an item; anything personal or transactional needs the session.
+ * Browsing (auction list and details) stays open so the super app can deep-link
+ * into an item; anything personal or transactional needs the session. The home
+ * route `/` is gated separately in the proxy — it is the site's front door, so
+ * without a bidder cookie it goes to the admin login rather than the mini-app.
  */
 export const PROTECTED_MINIAPP_ROUTES = ['/my-bids', '/wins', '/profile'];
 export const MINIAPP_PUBLIC_ROUTES = ['/connect', '/', '/how-it-works', '/auctions'];

@@ -69,8 +69,10 @@ export default async function ConnectPage({
 
         {testEnabled && <TestLoginForm next={next} />}
 
+        {/* `/auctions`, not `/`: without a bidder cookie the root sends the
+            visitor to the admin login, and this link exists to browse. */}
         <Link
-          href="/"
+          href="/auctions"
           className="mt-3 block rounded-md border border-border bg-card px-4 py-2.5 text-center text-sm font-medium transition-colors hover:bg-secondary"
         >
           Browse auctions without signing in
