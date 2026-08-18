@@ -16,10 +16,13 @@ import { BidAmountCipherError, decryptBidAmount, encryptBidAmount } from './bid-
 export class BidRejected extends Error {
   status: number;
   code: string;
-  constructor(message: string, code = 'BID_REJECTED', status = 400) {
+  /** Carried up from the gateway; echoed to the client only under SUPERAPP_DEBUG. */
+  debug?: unknown;
+  constructor(message: string, code = 'BID_REJECTED', status = 400, debug?: unknown) {
     super(message);
     this.code = code;
     this.status = status;
+    this.debug = debug;
   }
 }
 
@@ -41,6 +44,12 @@ export interface PlaceBidResult {
   status: 'PENDING_PAYMENT' | 'ACTIVE';
   sequence: number;
   transactionId?: string;
+  /**
+   * Only set on PENDING_PAYMENT. The webview has to post this to the super app
+   * over its JS channel to raise the PIN sheet — without that hand-off nothing
+   * ever asks the bidder to pay and the callback never comes.
+   */
+  paymentToken?: string;
   remainingBids: number;
   /** Paid for in an earlier round of this auction's chain, so no fee was raised. */
   carriedOver: boolean;
@@ -326,6 +335,7 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
       status: 'PENDING_PAYMENT',
       sequence,
       transactionId: payment.transactionId,
+      paymentToken: payment.paymentToken,
       remainingBids,
       carriedOver,
       carriedBidsRemaining,
@@ -341,7 +351,7 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
       },
     });
     if (error instanceof PaymentError) {
-      throw new BidRejected(error.message, 'PAYMENT_FAILED', error.status);
+      throw new BidRejected(error.message, 'PAYMENT_FAILED', error.status, error.debug);
     }
     throw error;
   }

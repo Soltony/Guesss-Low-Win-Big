@@ -6,6 +6,7 @@ import { BidRejected, placeBid } from '@/lib/bidding';
 import { isRevealAllowed } from '@/lib/auction-engine';
 import { tryDecryptBidAmount } from '@/lib/bid-crypto';
 import { toNum } from '@/lib/format';
+import { logSuperApp, newTrace, superAppDebugEnabled } from '@/lib/superapp-debug';
 
 export const dynamic = 'force-dynamic';
 
@@ -98,6 +99,21 @@ export async function POST(req: NextRequest) {
   }
 
   const meta = clientMeta(req);
+  const trace = newTrace();
+
+  // The session's token is the one that will be signed. Logging its fingerprint
+  // here is what makes it comparable with the one recorded at /connect.
+  logSuperApp('BID ↥ POST /api/miniapp/bids', {
+    trace,
+    auctionId,
+    amount,
+    bidderId: session.bidderId,
+    phone: session.phone,
+    isTest: Boolean(session.isTest),
+    token: session.superAppToken,
+    ipAddress: meta.ipAddress,
+    userAgent: meta.userAgent,
+  });
 
   try {
     const result = await placeBid({
@@ -109,12 +125,26 @@ export async function POST(req: NextRequest) {
       ipAddress: meta.ipAddress,
       userAgent: meta.userAgent,
     });
+    logSuperApp('BID ✓ 201 to the webview', { trace, ...result });
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     if (error instanceof BidRejected) {
-      return jsonError(error.message, error.status, { code: error.code });
+      logSuperApp('BID ✗ rejected', {
+        trace,
+        status: error.status,
+        code: error.code,
+        message: error.message,
+        debug: error.debug,
+      });
+      // A phone in a webview has no console, so in debug mode the gateway's own
+      // words travel back with the error instead of only reaching the terminal.
+      return jsonError(error.message, error.status, {
+        code: error.code,
+        ...(superAppDebugEnabled() && error.debug ? { debug: error.debug } : {}),
+      });
     }
     console.error('[miniapp/bids] unexpected failure', error);
+    logSuperApp('BID ✗ unexpected failure', { trace, error: (error as Error)?.message });
     return jsonError('Could not place your bid. Please try again.', 500);
   }
 }

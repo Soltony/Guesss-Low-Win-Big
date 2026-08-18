@@ -54,6 +54,41 @@ interface Props {
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 120_000;
 
+declare global {
+  interface Window {
+    /**
+     * Injected into the webview by the super app. Posting a payment token to it
+     * is what makes the wallet raise its PIN sheet — the same channel the loan
+     * repayment flow uses.
+     */
+    myJsChannel?: { postMessage: (message: string) => void };
+  }
+}
+
+/**
+ * Hands the gateway's payment token to the super app so it prompts for the PIN.
+ *
+ * Our server only *registers* the charge; nothing debits the wallet until this
+ * message lands, and the confirmation callback we poll for follows from the
+ * bidder approving it. Skip this and the bid sits on "confirming payment"
+ * until the poll gives up.
+ */
+function requestWalletApproval(paymentToken: string): boolean {
+  if (typeof window === 'undefined') return false;
+  const channel = window.myJsChannel;
+  if (typeof channel?.postMessage !== 'function') {
+    console.error('Super app channel (window.myJsChannel) not found — cannot prompt for the fee.');
+    return false;
+  }
+  try {
+    channel.postMessage(JSON.stringify({ token: paymentToken }));
+    return true;
+  } catch (error) {
+    console.error('Super app channel rejected the payment token', error);
+    return false;
+  }
+}
+
 export function BidPanel({
   auction,
   connected,
@@ -274,6 +309,17 @@ export function BidPanel({
         setRegisteredAmount(typeof data.amount === 'number' ? data.amount : value);
         setAmount('');
         router.refresh();
+        return;
+      }
+
+      // The fee is taken by the super app, not by us: the PIN sheet only opens
+      // once this token goes back over its channel, so a bid that cannot be
+      // handed over is a bid nobody will ever be asked to pay for.
+      if (!data.paymentToken || !requestWalletApproval(data.paymentToken)) {
+        setPhase('failed');
+        setMessage(
+          'Could not open the wallet to approve the fee. Please reopen this mini app from the super app and try again.'
+        );
         return;
       }
 

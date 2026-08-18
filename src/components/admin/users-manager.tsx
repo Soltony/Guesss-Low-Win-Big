@@ -208,14 +208,16 @@ export function UsersManager({
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Reset password"
-                        onClick={() => act(user, 'reset-password')}
-                      >
-                        <KeyRound className="h-3.5 w-3.5" />
-                      </Button>
+                      {user.id !== currentUserId && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Reset password"
+                          onClick={() => act(user, 'reset-password')}
+                        >
+                          <KeyRound className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       {user.locked && (
                         <Button
                           variant="ghost"

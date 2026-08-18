@@ -169,16 +169,13 @@ export default async function middleware(req: NextRequest) {
 
   if (!session?.authenticated) return deny(401, '/admin/login');
 
+  // A forced change pins the session to the change-password screen. Without one
+  // the screen stays reachable: it is also how a signed-in admin changes their
+  // own password voluntarily from the account menu.
   if (session.passwordChangeRequired) {
     const allowed =
       path === '/admin/change-password' || path.startsWith('/api/admin/auth/change-password');
     if (!allowed) return deny(403, '/admin/change-password');
-  } else if (path === '/admin/change-password') {
-    return securityHeaders(
-      NextResponse.redirect(new URL('/admin', req.nextUrl.origin)),
-      csp,
-      nonce
-    );
   }
 
   if (PERMISSION_EXEMPT_ROUTES.includes(path)) {

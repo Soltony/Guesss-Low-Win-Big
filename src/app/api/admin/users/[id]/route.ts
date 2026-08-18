@@ -22,6 +22,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const action = String(body?.action || 'update');
 
   if (action === 'reset-password') {
+    // Self-reset is a lockout: the revoke below kills the actor's own session,
+    // and the one-time password is only ever shown in the response dialog, so a
+    // refresh mid-flow signs them out holding a password nobody has read.
+    if (id === actor.id) {
+      return jsonError('Use Change password to update your own password.', 409);
+    }
+
     const tempPassword = generateTempPassword();
     await prisma.user.update({
       where: { id },

@@ -9,10 +9,13 @@ import { tryDecryptBidAmount } from '@/lib/bid-crypto';
 import { MASKED_AMOUNT, toNum } from '@/lib/format';
 import {
   PaymentError,
+  readTokenClaims,
   resolveGatewayConfig,
+  unwrapSuperAppToken,
   validateSuperAppToken,
   verifyCallbackSignature,
 } from '@/lib/payment-gateway';
+import { headerMap, logSuperApp, newTrace } from '@/lib/superapp-debug';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,25 +30,40 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(req: NextRequest) {
   const meta = clientMeta(req);
+  const trace = newTrace();
   let body: Record<string, any>;
 
+  // Read the body as text first: the exact payload the gateway sent — spacing,
+  // casing, field names and all — is what the signature was computed over.
+  const rawBody = await req.text().catch(() => '');
+
+  logSuperApp(`CALLBACK ← POST ${req.nextUrl.pathname}`, {
+    trace,
+    headers: headerMap(req.headers),
+    rawBody,
+    rawBodyLength: rawBody.length,
+    ipAddress: meta.ipAddress,
+  });
+
   try {
-    body = await req.json();
+    body = JSON.parse(rawBody);
   } catch {
+    logSuperApp('CALLBACK ✗ body is not valid JSON', { trace });
     return NextResponse.json({ message: 'Invalid JSON body.' }, { status: 400 });
   }
 
   // The Authorization header sometimes arrives as `Bearer {"token":"..."}`.
   const rawAuth = req.headers.get('authorization');
-  const embedded = rawAuth?.match(/"token"\s*:\s*"([^"]+)"/)?.[1];
-  const authHeader = embedded ? `Bearer ${embedded}` : rawAuth;
+  const bearer = unwrapSuperAppToken(rawAuth?.replace(/^Bearer\s+/i, ''));
+  const authHeader = bearer ? `Bearer ${bearer}` : rawAuth;
 
   if (!authHeader) {
+    logSuperApp('CALLBACK ✗ no authorization header', { trace });
     return NextResponse.json({ message: 'Authorization header is missing.' }, { status: 401 });
   }
 
   try {
-    await validateSuperAppToken(authHeader);
+    await validateSuperAppToken(authHeader, { trace, source: 'payment callback' });
   } catch (error) {
     const status = error instanceof PaymentError ? error.status : 401;
     await createAuditLog({
@@ -62,32 +80,56 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const transactionId = String(body.transactionId || '');
-  if (!transactionId) {
+  // The callback does not put our id where we put it: this gateway returns
+  // the uuid we signed as `txnRef` and fills `transactionId` with its own
+  // core-banking reference (FT...). The signed token carries our id too. So
+  // every candidate is tried rather than trusting one field name — reading
+  // only `transactionId` leaves a paid bid stuck on "awaiting payment".
+  const claims = readTokenClaims(body.token);
+  const asId = (value: unknown) => (value === undefined || value === null ? '' : String(value));
+  const candidateIds = [claims?.transactionId, body.txnRef, body.transactionId]
+    .map(asId)
+    .filter((value, index, all) => value && all.indexOf(value) === index);
+
+  if (!candidateIds.length) {
     return NextResponse.json({ message: 'transactionId is required.' }, { status: 400 });
   }
 
-  const transaction = await prisma.paymentTransaction.findUnique({
-    where: { transactionId },
+  const transaction = await prisma.paymentTransaction.findFirst({
+    where: { transactionId: { in: candidateIds } },
     include: { bidder: true, auction: { select: { code: true, title: true, currency: true } } },
   });
 
   if (!transaction) {
+    logSuperApp('CALLBACK ✗ no transaction matches any id in the callback', {
+      trace,
+      candidateIds,
+    });
     await createAuditLog({
       actorId: 'GATEWAY',
       actorType: 'EXTERNAL',
       action: 'PAYMENT_CALLBACK_UNKNOWN_TXN',
-      details: { transactionId },
+      details: { candidateIds },
       ipAddress: meta.ipAddress,
     });
     return NextResponse.json({ message: 'Unknown transaction.' }, { status: 404 });
   }
 
+  const transactionId = transaction.transactionId;
+  // Whatever the callback carries that is *not* our id is the gateway's own
+  // reference — the number finance quotes to the bank when tracing a payment.
+  const gatewayRef =
+    [body.txnRef, body.transactionId].map(asId).find((value) => value && value !== transactionId) ||
+    undefined;
+
   // ---- Signature check ----
   let signatureNote: string | undefined;
   try {
     const config = await resolveGatewayConfig();
-    const check = verifyCallbackSignature(body, config);
+    const check = verifyCallbackSignature(body, config, trace, {
+      transactionId: transaction.transactionId,
+      transactionTime: transaction.transactionTime,
+    });
     if (!check.valid) {
       signatureNote = 'Callback signature did not match the expected value.';
       const strict = process.env.PAYMENT_CALLBACK_STRICT === 'true';
@@ -97,7 +139,7 @@ export async function POST(req: NextRequest) {
         action: strict ? 'PAYMENT_CALLBACK_REJECTED' : 'PAYMENT_CALLBACK_SIGNATURE_MISMATCH',
         entity: 'PaymentTransaction',
         entityId: transaction.id,
-        details: { transactionId, strict, received: check.received },
+        details: { transactionId, strict, received: check.received, expected: check.expected },
         ipAddress: meta.ipAddress,
       });
       if (strict) {
@@ -106,7 +148,24 @@ export async function POST(req: NextRequest) {
     }
   } catch (error) {
     signatureNote = `Signature could not be verified: ${(error as Error).message}`;
+    logSuperApp('CALLBACK ✗ signature could not be verified', {
+      trace,
+      error: (error as Error).message,
+    });
   }
+
+  logSuperApp('CALLBACK ⇄ transaction resolved', {
+    trace,
+    transactionId,
+    candidateIds,
+    gatewayRef,
+    bidId: transaction.bidId,
+    storedStatus: transaction.status,
+    expectedAmount: toNum(transaction.amount),
+    reportedStatus: body.status,
+    paidAmount: body.paidAmount ?? body.amount,
+    signatureNote,
+  });
 
   // ---- Idempotency ----
   if (transaction.status === 'SUCCESS') {
@@ -130,11 +189,21 @@ export async function POST(req: NextRequest) {
       ? `Paid amount ${paidAmount} does not match the expected fee ${expected}`
       : undefined;
 
+  logSuperApp(`CALLBACK ⇄ verdict: ${succeeded ? 'paid' : 'not paid'}`, {
+    trace,
+    transactionId,
+    gatewaySaysPaid,
+    amountMatches,
+    paidAmount,
+    expected,
+    failureReason,
+  });
+
   await prisma.paymentTransaction.update({
     where: { id: transaction.id },
     data: {
       status: succeeded ? 'SUCCESS' : 'FAILED',
-      txnRef: body.txnRef ? String(body.txnRef) : undefined,
+      txnRef: gatewayRef,
       paidByNumber: body.paidByNumber ? String(body.paidByNumber) : undefined,
       gatewayStatus: body.status !== undefined ? String(body.status) : undefined,
       failureReason: [failureReason, signatureNote].filter(Boolean).join(' | ') || undefined,
@@ -150,7 +219,7 @@ export async function POST(req: NextRequest) {
     entityId: transaction.id,
     details: {
       transactionId,
-      txnRef: body.txnRef,
+      txnRef: gatewayRef,
       paidAmount,
       expected,
       bidId: transaction.bidId,
@@ -170,7 +239,7 @@ export async function POST(req: NextRequest) {
 
   const result = await confirmBid(transaction.bidId, {
     source: 'PAYMENT_CALLBACK',
-    txnRef: body.txnRef ? String(body.txnRef) : undefined,
+    txnRef: gatewayRef,
     paidByNumber: body.paidByNumber ? String(body.paidByNumber) : undefined,
   });
 

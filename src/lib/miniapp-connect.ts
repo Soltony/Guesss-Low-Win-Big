@@ -4,6 +4,7 @@ import { createAuditLog } from './audit-log';
 import { normalizePhone } from './format';
 import { PaymentError, validateSuperAppToken } from './payment-gateway';
 import { getSettings } from './settings';
+import { logSuperApp, newTrace } from './superapp-debug';
 
 export class MiniAppConnectError extends Error {
   status: number;
@@ -31,15 +32,31 @@ export async function connectMiniAppSession(
   superAppToken: string,
   meta: { ipAddress?: string | null; userAgent?: string | null } = {}
 ): Promise<ConnectResult> {
+  const trace = newTrace();
   const header = superAppToken?.startsWith('Bearer ')
     ? superAppToken
     : `Bearer ${superAppToken ?? ''}`;
 
+  logSuperApp('CONNECT ↥ super-app token handed over by the webview', {
+    trace,
+    hadBearerPrefix: Boolean(superAppToken?.startsWith('Bearer ')),
+    authorization: header,
+    ipAddress: meta.ipAddress,
+    userAgent: meta.userAgent,
+  });
+
   let phone: string;
   try {
-    ({ phone } = await validateSuperAppToken(header));
+    ({ phone } = await validateSuperAppToken(header, { trace, source: 'connect' }));
   } catch (error) {
-    if (error instanceof PaymentError) throw new MiniAppConnectError(error.status, error.message);
+    if (error instanceof PaymentError) {
+      logSuperApp('CONNECT ✗ token rejected, no session issued', {
+        trace,
+        status: error.status,
+        message: error.message,
+      });
+      throw new MiniAppConnectError(error.status, error.message);
+    }
     throw error;
   }
 
@@ -73,6 +90,19 @@ export async function connectMiniAppSession(
     bidderId: bidder.id,
     phone: bidder.phoneNumber,
     superAppToken: rawToken,
+  });
+
+  // The token fingerprint here is the reference point: if the one logged when a
+  // fee is charged differs, the token was altered between the two — by the
+  // query string, the cookie, or a re-encode — and that alone is enough to make
+  // the gateway reject the signature.
+  logSuperApp('CONNECT ✓ bidder session issued', {
+    trace,
+    bidderId: bidder.id,
+    phone: bidder.phoneNumber,
+    isNew: !existing,
+    status: bidder.status,
+    token: rawToken,
   });
 
   await createAuditLog({
