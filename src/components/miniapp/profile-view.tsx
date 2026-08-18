@@ -8,7 +8,6 @@ import {
   Gavel,
   Headphones,
   Loader2,
-  LogOut,
   ShieldCheck,
   Trophy,
   User,
@@ -65,12 +64,6 @@ export function ProfileView({
     } finally {
       setSaving(false);
     }
-  };
-
-  const disconnect = async () => {
-    await fetch('/api/miniapp/me', { method: 'DELETE' }).catch(() => null);
-    router.replace('/');
-    router.refresh();
   };
 
   return (
@@ -218,15 +211,6 @@ export function ProfileView({
             </p>
           </details>
         )}
-
-        <button
-          type="button"
-          onClick={disconnect}
-          className="gl-card flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-destructive/5"
-        >
-          <LogOut className="h-4 w-4 text-destructive" strokeWidth={1.75} />
-          <span className="flex-1 text-sm font-medium text-destructive">Disconnect session</span>
-        </button>
       </div>
     </div>
   );
