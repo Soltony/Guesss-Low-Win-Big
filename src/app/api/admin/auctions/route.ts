@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { isGuardFailure, jsonError, parsePaging, requirePermission } from '@/lib/api';
+import { isGuardFailure, jsonError, parsePaging, readJsonBody, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
 import { getSettings } from '@/lib/settings';
 import { parseReauctionConfig, reauctionDefaults } from '@/lib/reauction';
@@ -87,7 +87,8 @@ export async function POST(req: NextRequest) {
   if (isGuardFailure(guard)) return guard.response;
   const { user } = guard;
 
-  const body = await req.json().catch(() => ({}));
+  const body = await readJsonBody(req);
+  if (body === null) return jsonError('Request body is too large.', 413);
   const settings = await getSettings();
 
   const itemId = String(body.itemId || '');

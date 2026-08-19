@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { isGuardFailure, jsonError, requirePermission } from '@/lib/api';
+import { isGuardFailure, jsonError, readJsonBody, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
 
 export const dynamic = 'force-dynamic';
@@ -14,7 +14,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const template = await prisma.notificationTemplate.findUnique({ where: { id } });
   if (!template) return jsonError('Template not found', 404);
 
-  const body = await req.json().catch(() => ({}));
+  const body = await readJsonBody(req);
+  if (body === null) return jsonError('Request body is too large.', 413);
   const data: Record<string, unknown> = {};
 
   if (body.name !== undefined) data.name = String(body.name).trim();

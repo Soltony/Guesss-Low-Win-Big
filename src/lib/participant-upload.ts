@@ -1,4 +1,5 @@
 import type { NextRequest } from 'next/server';
+import { readJsonBody } from './api';
 import { parseParticipantText, readParticipantFile } from './eligibility';
 import type { ParsedList } from './eligibility-list';
 
@@ -93,7 +94,7 @@ export async function readParticipantUpload(req: NextRequest): Promise<UploadRea
     }
   }
 
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = ((await readJsonBody(req)) ?? {}) as Record<string, unknown>;
   const mode = body.mode === 'replace' ? 'replace' : 'append';
 
   if (typeof body.text === 'string') {

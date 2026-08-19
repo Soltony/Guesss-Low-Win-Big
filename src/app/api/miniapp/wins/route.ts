@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getBidderSession } from '@/lib/session';
-import { jsonError } from '@/lib/api';
+import { jsonError, readJsonBody } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
 import { firstImage, toNum } from '@/lib/format';
 
@@ -55,7 +55,8 @@ export async function POST(req: NextRequest) {
   const session = await getBidderSession();
   if (!session) return jsonError('Not authenticated', 401);
 
-  const body = await req.json().catch(() => ({}));
+  const body = await readJsonBody(req);
+  if (body === null) return jsonError('Request body is too large.', 413);
   const winnerId = String(body?.winnerId || '');
   const deliveryName = String(body?.deliveryName || '').trim();
   const deliveryPhone = String(body?.deliveryPhone || '').trim();

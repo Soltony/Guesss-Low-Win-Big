@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { isGuardFailure, jsonError, requirePermission } from '@/lib/api';
+import { isGuardFailure, jsonError, readJsonBody, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
 import { generateTempPassword, hashPassword, isValidEmail } from '@/lib/admin-users';
 import { normalizePhone } from '@/lib/format';
@@ -37,7 +37,8 @@ export async function POST(req: NextRequest) {
   if (isGuardFailure(guard)) return guard.response;
   const { user: actor } = guard;
 
-  const body = await req.json().catch(() => ({}));
+  const body = await readJsonBody(req);
+  if (body === null) return jsonError('Request body is too large.', 413);
   const fullName = String(body.fullName || '').trim();
   const email = String(body.email || '').trim().toLowerCase();
   const phoneNumber = normalizePhone(String(body.phoneNumber || ''));

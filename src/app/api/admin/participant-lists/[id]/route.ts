@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { isGuardFailure, jsonError, parsePaging, requirePermission } from '@/lib/api';
+import { isGuardFailure, jsonError, parsePaging, readJsonBody, requirePermission } from '@/lib/api';
 import {
   cleanDescription,
   cleanName,
@@ -120,7 +120,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { user } = guard;
 
   const { id } = await params;
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = ((await readJsonBody(req)) ?? {}) as Record<string, unknown>;
 
   try {
     await updateList({

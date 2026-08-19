@@ -3,7 +3,8 @@ import prisma from '@/lib/prisma';
 import { getCurrentUser, revokeAllUserSessions, deleteAdminSession } from '@/lib/session';
 import { hashPassword, validatePassword, verifyPassword } from '@/lib/admin-users';
 import { createAuditLog } from '@/lib/audit-log';
-import { clientMeta, jsonError } from '@/lib/api';
+import { clientMeta, jsonError, readJsonBody, tooManyRequests } from '@/lib/api';
+import { clearRateLimit, consumeRateLimit } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,7 +12,16 @@ export async function POST(req: NextRequest) {
   const user = await getCurrentUser({ allowRefresh: false });
   if (!user) return jsonError('Not authenticated', 401);
 
-  const body = await req.json().catch(() => ({}));
+  // Authenticated, but this endpoint verifies the current password — which
+  // makes it an oracle for guessing it from a session that was hijacked rather
+  // than signed in to. Keyed on the account, since that is what is at risk.
+  const limit = consumeRateLimit('passwordChange', `account:${user.id}`);
+  if (!limit.ok) {
+    return tooManyRequests(limit.retryAfterSeconds, 'Too many attempts. Please wait and retry.');
+  }
+
+  const body = await readJsonBody(req);
+  if (body === null) return jsonError('Request body is too large.', 413);
   const currentPassword = String(body?.currentPassword || '');
   const newPassword = String(body?.newPassword || '');
   const confirmPassword = String(body?.confirmPassword || '');
@@ -42,6 +52,8 @@ export async function POST(req: NextRequest) {
     });
     return jsonError('Your current password is incorrect.', 401);
   }
+
+  clearRateLimit('passwordChange', `account:${user.id}`);
 
   await prisma.user.update({
     where: { id: user.id },

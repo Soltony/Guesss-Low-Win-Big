@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { isGuardFailure, jsonError, requirePermission } from '@/lib/api';
+import { isGuardFailure, jsonError, readJsonBody, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
 import { requestChange, requiresApproval } from '@/lib/approvals';
 import { settleAuction } from '@/lib/auction-engine';
@@ -20,7 +20,8 @@ export const dynamic = 'force-dynamic';
  * /admin/approvals is what actually executes it.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const body = await req.json().catch(() => ({}));
+  const body = await readJsonBody(req);
+  if (body === null) return jsonError('Request body is too large.', 413);
   const action = String(body?.action || '');
   const { id } = await params;
 

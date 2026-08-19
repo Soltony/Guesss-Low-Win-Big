@@ -4,9 +4,11 @@ import { createAdminSession } from '@/lib/session';
 import { verifyPassword } from '@/lib/admin-users';
 import { createAuditLog } from '@/lib/audit-log';
 import { getSettings } from '@/lib/settings';
-import { clientMeta, jsonError } from '@/lib/api';
+import { clientMeta, jsonError, readJsonBody, tooManyRequests } from '@/lib/api';
 import { parsePermissions, firstAllowedPath } from '@/lib/permissions';
 import { ADMIN_ROUTES, moduleKeyFor } from '@/lib/route-permissions';
+import { clearRateLimit, consumeRateLimit } from '@/lib/rate-limit';
+import { addressKey } from '@/lib/request-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,11 +18,35 @@ const GENERIC_FAILURE = 'Invalid email or password.';
 
 export async function POST(req: NextRequest) {
   const meta = clientMeta(req);
-  const body = await req.json().catch(() => ({}));
+  const body = await readJsonBody(req);
+  if (body === null) return jsonError('Request body is too large.', 413);
   const email = String(body?.email || '').trim().toLowerCase();
   const password = String(body?.password || '');
 
   if (!email || !password) return jsonError('Email and password are required.', 400);
+
+  // Two windows, because they stop different attacks. The per-account window is
+  // the companion to the lockout below; the per-address one is what stops a
+  // single caller spraying one password across many accounts, which never
+  // trips any individual account's counter.
+  const perAccount = consumeRateLimit('adminLogin', `account:${email}`);
+  const perAddress = consumeRateLimit('adminLogin', `addr:${addressKey(req.headers)}`, {
+    limit: 30,
+    windowMs: 5 * 60_000,
+  });
+
+  if (!perAccount.ok || !perAddress.ok) {
+    const retryAfter = Math.max(perAccount.retryAfterSeconds, perAddress.retryAfterSeconds);
+    await createAuditLog({
+      actorId: email,
+      actorType: 'ADMIN',
+      action: 'LOGIN_RATE_LIMITED',
+      details: { scope: !perAccount.ok ? 'account' : 'address', retryAfter },
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    });
+    return tooManyRequests(retryAfter, 'Too many sign-in attempts. Please wait and try again.');
+  }
 
   const settings = await getSettings();
   const maxAttempts = Number(settings['security.maxFailedLogins']) || 5;
@@ -95,6 +121,10 @@ export async function POST(req: NextRequest) {
     where: { id: user.id },
     data: { failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() },
   });
+
+  // A genuine sign-in clears the window, so an operator who fumbled their
+  // password a few times is not left throttled once they get it right.
+  clearRateLimit('adminLogin', `account:${email}`);
 
   await createAdminSession(user.id, meta);
 

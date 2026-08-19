@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { isGuardFailure, jsonError, requirePermission } from '@/lib/api';
+import { isGuardFailure, jsonError, readJsonBody, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
 import { sanitizePermissions, parsePermissions, SUPER_ADMIN_ROLE } from '@/lib/permissions';
 
@@ -21,7 +21,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return jsonError('The Super Admin role always has full access and cannot be edited.', 409);
   }
 
-  const body = await req.json().catch(() => ({}));
+  const body = await readJsonBody(req);
+  if (body === null) return jsonError('Request body is too large.', 413);
   const data: Record<string, unknown> = {};
 
   if (body.name !== undefined) {

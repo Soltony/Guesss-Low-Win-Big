@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBidderSession } from '@/lib/session';
-import { jsonError } from '@/lib/api';
+import { jsonError, readJsonBody } from '@/lib/api';
 import { popupAdsForBidder, recordAdClick, recordAdView } from '@/lib/ads';
 
 export const dynamic = 'force-dynamic';
@@ -28,7 +28,8 @@ export async function POST(req: NextRequest) {
   const session = await getBidderSession();
   if (!session) return jsonError('Not authenticated', 401);
 
-  const body = await req.json().catch(() => ({}));
+  const body = await readJsonBody(req);
+  if (body === null) return jsonError('Request body is too large.', 413);
   const adId = String(body?.adId || '').trim();
   if (!adId) return jsonError('Ad id is required.', 400);
 

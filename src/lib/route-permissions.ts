@@ -150,6 +150,37 @@ export const API_MODULE_MAP: Record<string, string> = {
   '/api/admin/dashboard': 'dashboard',
 };
 
+/**
+ * Role names required to call an admin API, over and above the module grant.
+ *
+ * Mirrors the `roles` constraint on the corresponding page. The two are stated
+ * separately because the proxy resolves an API path through `API_MODULE_MAP`
+ * and never sees an `AdminRoute`, and a page restricted to Super Admin whose
+ * API accepts any module grant is a vertical privilege escalation waiting for
+ * somebody to notice the endpoint.
+ */
+export const API_ROLE_CONSTRAINTS: Record<string, string[]> = Object.fromEntries(
+  ADMIN_ROUTES.filter((route) => route.roles?.length).map((route) => [
+    moduleKeyFor(route.label),
+    route.roles as string[],
+  ])
+);
+
+/**
+ * Admin APIs that authorize themselves rather than through a single module key.
+ *
+ * The uploads endpoint is the only one: artwork is uploaded from Items,
+ * Categories and Content alike, so "may this caller upload" is the union of
+ * three module grants — a question the proxy cannot ask with one key. The
+ * handler asks it directly. Everything absent from both this list and
+ * `API_MODULE_MAP` is refused, so a new endpoint cannot ship unguarded.
+ */
+export const SELF_GUARDED_ADMIN_API = ['/api/admin/uploads'];
+
+export function isSelfGuardedAdminApi(path: string): boolean {
+  return SELF_GUARDED_ADMIN_API.some((p) => path === p || path.startsWith(p + '/'));
+}
+
 export function moduleKeyForApiPath(path: string): string | undefined {
   let best: string | undefined;
   let bestLen = 0;

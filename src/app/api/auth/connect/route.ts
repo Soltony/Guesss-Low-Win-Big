@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { MiniAppConnectError, connectMiniAppSession } from '@/lib/miniapp-connect';
-import { clientMeta, jsonError } from '@/lib/api';
+import { clientMeta, jsonError, readJsonBody, tooManyRequests } from '@/lib/api';
 import { headerMap, logSuperApp } from '@/lib/superapp-debug';
+import { consumeRateLimit } from '@/lib/rate-limit';
+import { addressKey } from '@/lib/request-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,13 +12,24 @@ export const dynamic = 'force-dynamic';
  * Called by /connect once the webview hands us the Authorization header.
  */
 export async function POST(req: NextRequest) {
+  // This endpoint mints a session from a supplied token, so it is worth
+  // replaying candidate tokens against. Generous enough that a flaky webview
+  // retrying on its own is never affected.
+  const limit = consumeRateLimit('sessionExchange', addressKey(req.headers));
+  if (!limit.ok) return tooManyRequests(limit.retryAfterSeconds);
+
   let superAppToken: string | undefined;
   let source: string | undefined;
 
   try {
-    const body = await req.json().catch(() => ({}));
+    const body = await readJsonBody(req);
+    if (body === null) return jsonError('Request body is too large.', 413);
     superAppToken = body?.superAppToken || req.headers.get('authorization') || undefined;
-    source = body?.superAppToken ? 'request body' : req.headers.get('authorization') ? 'authorization header' : undefined;
+    source = body?.superAppToken
+      ? 'request body'
+      : req.headers.get('authorization')
+        ? 'authorization header'
+        : undefined;
   } catch {
     return jsonError('Invalid request body.', 400);
   }

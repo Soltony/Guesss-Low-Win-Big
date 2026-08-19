@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isGuardFailure, jsonError, requirePermission } from '@/lib/api';
+import { isGuardFailure, jsonError, readJsonBody, requirePermission } from '@/lib/api';
 import {
   SETTINGS_BY_KEY,
   getSettings,
@@ -24,7 +24,8 @@ export async function PUT(req: NextRequest) {
   if (isGuardFailure(guard)) return guard.response;
   const { user } = guard;
 
-  const body = await req.json().catch(() => ({}));
+  const body = await readJsonBody(req);
+  if (body === null) return jsonError('Request body is too large.', 413);
   const updates = body?.values;
   if (!updates || typeof updates !== 'object') {
     return jsonError('No settings supplied.', 400);

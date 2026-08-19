@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { isGuardFailure, jsonError, requirePermission } from '@/lib/api';
+import { isGuardFailure, jsonError, readJsonBody, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
 import { diffFields } from '@/lib/approvals';
 import { REAUCTION_FIELDS, parseReauctionConfig } from '@/lib/reauction';
@@ -68,7 +68,8 @@ export async function PATCH(
     return jsonError(`A ${auction.status.toLowerCase()} auction cannot be edited.`, 409);
   }
 
-  const body = await req.json().catch(() => ({}));
+  const body = await readJsonBody(req);
+  if (body === null) return jsonError('Request body is too large.', 413);
   const hasBids = auction.bidCount > 0;
 
   const data: Record<string, unknown> = {};

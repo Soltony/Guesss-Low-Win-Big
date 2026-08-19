@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isGuardFailure, jsonError, requirePermission } from '@/lib/api';
+import { isGuardFailure, jsonError, readJsonBody, requirePermission } from '@/lib/api';
 import {
   cleanDescription,
   cleanName,
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = ((await readJsonBody(req)) ?? {}) as Record<string, unknown>;
 
   try {
     const list = await createList({

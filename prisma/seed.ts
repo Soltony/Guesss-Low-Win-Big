@@ -10,6 +10,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { generateTempPassword, validatePassword } from '../src/lib/admin-users';
 import { SETTING_DEFINITIONS } from '../src/lib/settings';
 import { DEFAULT_TEMPLATES } from '../src/lib/notifications';
 import { MODULE_KEYS, parentModuleKey } from '../src/lib/route-permissions';
@@ -200,7 +201,21 @@ async function seedRoles() {
 async function seedSuperAdmin() {
   const email = (process.env.SEED_ADMIN_EMAIL || 'admin@guesslow.et').toLowerCase();
   const phone = process.env.SEED_ADMIN_PHONE || '251900000001';
-  const password = process.env.SEED_ADMIN_PASSWORD || 'ChangeMe!2026';
+
+  // No literal fallback. A password committed to the repository is a published
+  // credential the moment the repository is cloned, and every deployment seeded
+  // from this file would share it — the forced change at first sign-in only
+  // helps if nobody signs in before the operator does. A supplied value is
+  // still held to the live password policy; otherwise one is generated and
+  // printed once, here, and never stored anywhere else.
+  const supplied = process.env.SEED_ADMIN_PASSWORD;
+  if (supplied) {
+    const policy = validatePassword(supplied);
+    if (!policy.ok) {
+      throw new Error(`SEED_ADMIN_PASSWORD does not satisfy the password policy: ${policy.error}`);
+    }
+  }
+  const password = supplied || generateTempPassword();
 
   const role = await prisma.role.findUniqueOrThrow({ where: { name: 'Super Admin' } });
   const existing = await prisma.user.findUnique({ where: { email } });

@@ -28,16 +28,38 @@ const SECRET_KEYS = [
   'paymentkey',
   'secret',
   'password',
+  // A request's cookie header carries the whole session — the admin access and
+  // refresh tokens, or the bidder's super-app token. Printing it verbatim into
+  // a log hands over every session that log has ever seen.
+  'cookie',
+  'set-cookie',
+  'x-cron-secret',
+  'biddersession',
+  'newpassword',
+  'currentpassword',
+  'signature',
 ];
 
+/**
+ * Debug logging is off in production, whatever the flag says.
+ *
+ * This log prints request bodies, header maps and gateway payloads, and the
+ * same switch decides whether the gateway's own error text travels back to the
+ * webview in an API response. A flag left on in a deployment is therefore an
+ * information-disclosure channel rather than just noise — so production is the
+ * one environment where it cannot be turned on by configuration.
+ */
 export function superAppDebugEnabled(): boolean {
+  if (process.env.NODE_ENV === 'production') return false;
   const flag = process.env.SUPERAPP_DEBUG;
   if (flag === 'true') return true;
   if (flag === 'false') return false;
-  return process.env.NODE_ENV !== 'production';
+  return true;
 }
 
+/** Prints secrets in full rather than fingerprinting them. Never in production. */
 export function superAppSecretsShown(): boolean {
+  if (process.env.NODE_ENV === 'production') return false;
   return process.env.SUPERAPP_DEBUG_SECRETS === 'true';
 }
 

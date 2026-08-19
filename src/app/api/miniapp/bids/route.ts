@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getBidderSession } from '@/lib/session';
-import { clientMeta, jsonError } from '@/lib/api';
+import { clientMeta, jsonError, readJsonBody, tooManyRequests } from '@/lib/api';
+import { consumeRateLimit } from '@/lib/rate-limit';
 import { BidRejected, placeBid } from '@/lib/bidding';
 import { isRevealAllowed } from '@/lib/auction-engine';
 import { tryDecryptBidAmount } from '@/lib/bid-crypto';
@@ -84,7 +85,17 @@ export async function POST(req: NextRequest) {
   const session = await getBidderSession();
   if (!session) return jsonError('Not authenticated', 401);
 
-  const body = await req.json().catch(() => ({}));
+  // Each accepted bid charges a fee against the bidder's wallet, so a runaway
+  // client — or a script — costs the customer real money. Keyed on the bidder
+  // rather than the address: this is a per-account ceiling, and the settings
+  // throttle in `placeBid` is the finer-grained control alongside it.
+  const limit = consumeRateLimit('bidPlacement', `bidder:${session.bidderId}`);
+  if (!limit.ok) {
+    return tooManyRequests(limit.retryAfterSeconds, 'You are bidding too quickly. Please wait.');
+  }
+
+  const body = await readJsonBody(req);
+  if (body === null) return jsonError('Request body is too large.', 413);
   const auctionId = String(body?.auctionId || '');
   const amount = Number(body?.amount);
 

@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { createBidderSession } from '@/lib/session';
 import { createAuditLog } from '@/lib/audit-log';
-import { clientMeta, jsonError } from '@/lib/api';
+import { clientMeta, jsonError, readJsonBody, tooManyRequests } from '@/lib/api';
 import { normalizePhone } from '@/lib/format';
 import { getSettings } from '@/lib/settings';
 import { TEST_PHONE_PREFIX, isTestLoginEnabled } from '@/lib/test-login';
+import { consumeRateLimit } from '@/lib/rate-limit';
+import { addressKey } from '@/lib/request-context';
+import { secureInt } from '@/lib/random';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,17 +21,24 @@ export async function POST(req: NextRequest) {
     return jsonError('Test sign-in is not enabled on this environment.', 403);
   }
 
+  // Mints a session with no credential behind it, so even where it is switched
+  // on deliberately it should not be usable as a bulk account factory.
+  const limit = consumeRateLimit('testLogin', addressKey(req.headers));
+  if (!limit.ok) return tooManyRequests(limit.retryAfterSeconds);
+
   const meta = clientMeta(req);
-  const body = await req.json().catch(() => ({}));
+  const body = await readJsonBody(req);
+  if (body === null) return jsonError('Request body is too large.', 413);
 
   const rawPhone = String(body?.phone || '').trim();
   const requestedName = String(body?.fullName || '').trim();
 
   // A blank phone number gets a generated test identity, so QA can open a
-  // fresh bidder in one click.
+  // fresh bidder in one click. Drawn from the CSPRNG like every other
+  // identifier — a predictable one lets a caller guess another tester's number.
   const phoneNumber = rawPhone
     ? normalizePhone(rawPhone)
-    : `${TEST_PHONE_PREFIX}${String(Math.floor(Math.random() * 100_000)).padStart(5, '0')}`;
+    : `${TEST_PHONE_PREFIX}${String(secureInt(100_000)).padStart(5, '0')}`;
 
   if (phoneNumber.length < 9) {
     return jsonError('Enter a valid phone number, or leave it blank for a random one.', 400);

@@ -16,8 +16,35 @@ import {
   verifyCallbackSignature,
 } from '@/lib/payment-gateway';
 import { headerMap, logSuperApp, newTrace } from '@/lib/superapp-debug';
+import { consumeRateLimit } from '@/lib/rate-limit';
+import { addressKey } from '@/lib/request-context';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * Whether a callback whose signature does not match is rejected.
+ *
+ * Previously this defaulted to off, so a mismatched signature was recorded and
+ * then processed anyway — leaving bid confirmation resting on bearer-token
+ * validation alone, and making the signature a log entry rather than a control.
+ * The default is now strict in production: switching it off is possible, but it
+ * has to be said out loud, and it says so in the log every time it is used.
+ */
+function callbackStrictMode(): boolean {
+  const configured = (process.env.PAYMENT_CALLBACK_STRICT || '').trim().toLowerCase();
+  if (configured === 'true') return true;
+  if (configured === 'false') {
+    if (process.env.NODE_ENV === 'production') {
+      console.warn(
+        '[payment] PAYMENT_CALLBACK_STRICT=false in production: callbacks with a mismatched ' +
+          'signature will be accepted. Confirm the signature format with the gateway and remove this.'
+      );
+    }
+    return false;
+  }
+  // Unset: fail closed in production, stay permissive while integrating locally.
+  return process.env.NODE_ENV === 'production';
+}
 
 /**
  * Payment gateway callback.
@@ -29,6 +56,16 @@ export const dynamic = 'force-dynamic';
  * exist and be PENDING, and confirmation is idempotent because gateways retry.
  */
 export async function POST(req: NextRequest) {
+  // Exempt from the proxy's origin check — a gateway has no browser origin to
+  // present — so this is the only ceiling on how fast it can be replayed.
+  // High, because a gateway legitimately retries a callback it thinks failed.
+  const limit = consumeRateLimit('paymentCallback', addressKey(req.headers));
+  if (!limit.ok) {
+    const res = NextResponse.json({ message: 'Too many requests.' }, { status: 429 });
+    res.headers.set('Retry-After', String(limit.retryAfterSeconds));
+    return res;
+  }
+
   const meta = clientMeta(req);
   const trace = newTrace();
   let body: Record<string, any>;
@@ -66,16 +103,26 @@ export async function POST(req: NextRequest) {
     await validateSuperAppToken(authHeader, { trace, source: 'payment callback' });
   } catch (error) {
     const status = error instanceof PaymentError ? error.status : 401;
+    console.error('[payment/callback] token validation failed', error);
     await createAuditLog({
       actorId: 'GATEWAY',
       actorType: 'EXTERNAL',
       action: 'PAYMENT_CALLBACK_REJECTED',
-      details: { reason: 'Token validation failed', transactionId: body?.transactionId },
+      details: {
+        reason: 'Token validation failed',
+        transactionId: body?.transactionId,
+        detail: error instanceof Error ? error.message : String(error),
+      },
       ipAddress: meta.ipAddress,
       userAgent: meta.userAgent,
     });
+    // Only a `PaymentError` is written for the caller. Anything else is an
+    // internal failure whose message names the token-validation host we could
+    // not reach, or the shape of a response we did not expect — detail that
+    // belongs in the log and the audit row, not in a reply to an unauthenticated
+    // caller who has just failed authentication.
     return NextResponse.json(
-      { message: error instanceof Error ? error.message : 'Token validation failed.' },
+      { message: error instanceof PaymentError ? error.message : 'Token validation failed.' },
       { status }
     );
   }
@@ -132,7 +179,7 @@ export async function POST(req: NextRequest) {
     });
     if (!check.valid) {
       signatureNote = 'Callback signature did not match the expected value.';
-      const strict = process.env.PAYMENT_CALLBACK_STRICT === 'true';
+      const strict = callbackStrictMode();
       await createAuditLog({
         actorId: 'GATEWAY',
         actorType: 'EXTERNAL',
@@ -172,7 +219,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ message: 'Already processed.', status: 'SUCCESS' });
   }
 
-  const paidAmount = Number(body.paidAmount ?? body.amount ?? 0);
+  const reportedAmount = body.paidAmount ?? body.amount;
+  // Distinguish "the gateway did not send an amount" from "the gateway said
+  // zero". Treating both as success let a callback reporting a paid amount of
+  // nought confirm a bid whose fee had not been collected.
+  const amountReported =
+    reportedAmount !== undefined &&
+    reportedAmount !== null &&
+    String(reportedAmount).trim() !== '';
+
+  const paidAmount = Number(reportedAmount ?? 0);
   const expected = toNum(transaction.amount);
   const gatewaySaysPaid =
     body.status === undefined ||
@@ -181,11 +237,13 @@ export async function POST(req: NextRequest) {
     );
 
   const amountMatches = Math.abs(paidAmount - expected) < 0.01;
-  const succeeded = gatewaySaysPaid && (paidAmount === 0 || amountMatches);
+  // With no amount in the payload the reported status is all there is to go on,
+  // and the signature — which covers the amount field — is what attests it.
+  const succeeded = gatewaySaysPaid && (amountReported ? amountMatches : true);
 
   const failureReason = !gatewaySaysPaid
     ? `Gateway reported status ${body.status}`
-    : !amountMatches && paidAmount !== 0
+    : amountReported && !amountMatches
       ? `Paid amount ${paidAmount} does not match the expected fee ${expected}`
       : undefined;
 

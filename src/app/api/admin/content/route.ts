@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { isGuardFailure, jsonError, requirePermission } from '@/lib/api';
+import { isGuardFailure, jsonError, readJsonBody, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
 import { isAdFrequency, parseAdSchedule, parseAdTimings } from '@/lib/ads';
 import { CONTENT_KIND_MODULES } from '@/lib/route-permissions';
@@ -13,7 +13,8 @@ export const dynamic = 'force-dynamic';
  * `kind` in the payload, which the proxy cannot see, so the check happens here.
  */
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => ({}));
+  const body = await readJsonBody(req);
+  if (body === null) return jsonError('Request body is too large.', 413);
   const kind = String(body?.kind || '');
 
   const moduleKey = CONTENT_KIND_MODULES[kind];

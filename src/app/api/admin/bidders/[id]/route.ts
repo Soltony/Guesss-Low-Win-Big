@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { isGuardFailure, jsonError, requirePermission } from '@/lib/api';
+import { isGuardFailure, jsonError, readJsonBody, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
 import { BIDDER_STATUSES } from '@/lib/types';
 
@@ -16,7 +16,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const bidder = await prisma.bidder.findUnique({ where: { id } });
   if (!bidder) return jsonError('Bidder not found', 404);
 
-  const body = await req.json().catch(() => ({}));
+  const body = await readJsonBody(req);
+  if (body === null) return jsonError('Request body is too large.', 413);
   const status = String(body?.status || '');
   const reason = String(body?.reason || '').trim();
 

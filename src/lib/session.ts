@@ -17,16 +17,97 @@ export const ACCESS_COOKIE = 'accessToken';
 export const REFRESH_COOKIE = 'refreshToken';
 export const MINIAPP_COOKIE = 'bidderSession';
 
-function isProd() {
-  return process.env.NODE_ENV === 'production';
+/**
+ * Cookies are marked Secure everywhere except an explicitly local run.
+ *
+ * Testing `NODE_ENV === 'production'` puts the burden the wrong way round: a
+ * deployment that forgets to set it ships session cookies that travel in the
+ * clear, and nothing about the running app looks wrong. Defaulting to Secure
+ * means the only way to get a plain-HTTP cookie is to say so.
+ */
+function isLocalRuntime() {
+  const env = process.env.NODE_ENV;
+  return env === 'development' || env === 'test';
 }
 
-const cookieBase = {
+/**
+ * Administrative cookies are SameSite=Strict.
+ *
+ * Lax still accompanies a cross-site top-level navigation, which is enough for
+ * an attacker's page to drive an authenticated GET into the console. Nothing
+ * legitimately enters the admin surface from another site, so Strict costs
+ * nothing here.
+ */
+const adminCookieBase = {
   httpOnly: true,
-  secure: isProd(),
+  secure: !isLocalRuntime(),
+  sameSite: 'strict' as const,
+  path: '/',
+};
+
+/**
+ * The bidder cookie stays Lax, deliberately.
+ *
+ * The mini-app is entered by the super app navigating the webview to `/connect`
+ * — a cross-site top-level navigation. Under Strict the cookie would be
+ * withheld on exactly that hop and every deep link would bounce back through a
+ * fresh token exchange. It is HttpOnly and Secure, it carries no privileged
+ * capability, and the server-side origin check in `src/proxy.ts` covers the
+ * state-changing requests that SameSite would otherwise be alone in guarding.
+ */
+const bidderCookieBase = {
+  httpOnly: true,
+  secure: !isLocalRuntime(),
   sameSite: 'lax' as const,
   path: '/',
 };
+
+// --------------------------------------
+// SESSION LIFETIME
+// --------------------------------------
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * How long a session may sit unused before it is revoked.
+ *
+ * Rotation used to extend the expiry on every refresh, so an active session —
+ * including one being driven by a stolen token — never expired at all. These
+ * two limits are what bound it: idle time since the last request, and total
+ * time since sign-in. Both are configurable, both are clamped, so a typo in the
+ * environment cannot widen them to something meaningless.
+ */
+export function idleTimeoutMs(): number {
+  const configured = Number(process.env.SESSION_IDLE_MINUTES);
+  const minutes = Number.isFinite(configured) && configured > 0 ? configured : 30;
+  return clamp(minutes, 5, 240) * 60_000;
+}
+
+export function absoluteLifetimeMs(): number {
+  const configured = Number(process.env.SESSION_ABSOLUTE_HOURS);
+  const hours = Number.isFinite(configured) && configured > 0 ? configured : 8;
+  return clamp(hours, 1, 72) * 60 * 60_000;
+}
+
+/** Why a session was refused, or null when it is still within both limits. */
+export function sessionLifetimeBreach(record: {
+  createdAt: Date;
+  lastActivity: Date;
+}): 'idle' | 'absolute' | null {
+  const now = Date.now();
+  if (now - record.lastActivity.getTime() > idleTimeoutMs()) return 'idle';
+  if (now - record.createdAt.getTime() > absoluteLifetimeMs()) return 'absolute';
+  return null;
+}
+
+async function revokeSession(id: string, reason: string) {
+  await prisma.session
+    .update({ where: { id }, data: { revoked: true, jti: null } })
+    .catch(() => null);
+  console.warn(`[session] revoked ${id}: ${reason}`);
+}
 
 // --------------------------------------
 // ADMIN SESSIONS (DB-backed, rotating refresh token)
@@ -39,7 +120,11 @@ export async function createAdminSession(
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new Error('User not found during session creation.');
 
-  const refreshExpiresAt = expiryFromDays(REFRESH_TOKEN_DAYS);
+  // The refresh token never outlives the absolute session cap, whatever
+  // REFRESH_TOKEN_DAYS says — the cap is the shorter of the two by design.
+  const refreshExpiresAt = new Date(
+    Math.min(expiryFromDays(REFRESH_TOKEN_DAYS).getTime(), Date.now() + absoluteLifetimeMs())
+  );
   const refreshToken = await encryptJwt({ userId, t: 'refresh' }, `${REFRESH_TOKEN_DAYS}d`);
   const jti = uuid();
 
@@ -74,10 +159,10 @@ export async function createAdminSession(
 
   const store = await cookies();
   store.set(ACCESS_COOKIE, accessToken, {
-    ...cookieBase,
+    ...adminCookieBase,
     expires: expiryFromMinutes(ACCESS_TOKEN_MINUTES),
   });
-  store.set(REFRESH_COOKIE, refreshToken, { ...cookieBase, expires: refreshExpiresAt });
+  store.set(REFRESH_COOKIE, refreshToken, { ...adminCookieBase, expires: refreshExpiresAt });
 
   return { accessToken, refreshToken, sessionId: record.id };
 }
@@ -119,6 +204,12 @@ export async function getAdminSession(options?: {
         if (payload.jti && record.jti && payload.jti !== record.jti) return null;
         if (!refresh || refresh !== record.refreshToken) return null;
 
+        const breach = sessionLifetimeBreach(record);
+        if (breach) {
+          await revokeSession(record.id, `${breach} limit exceeded`);
+          return null;
+        }
+
         await prisma.session.update({
           where: { id: record.id },
           data: { lastActivity: new Date() },
@@ -132,6 +223,12 @@ export async function getAdminSession(options?: {
 
   const record = await prisma.session.findUnique({ where: { refreshToken: refresh } });
   if (!record || record.revoked || record.expiresAt < new Date()) return null;
+
+  const breach = sessionLifetimeBreach(record);
+  if (breach) {
+    await revokeSession(record.id, `${breach} limit exceeded`);
+    return null;
+  }
 
   const user = await prisma.user.findUnique({ where: { id: record.userId } });
   if (!user) return null;
@@ -155,7 +252,13 @@ export async function getAdminSession(options?: {
     `${REFRESH_TOKEN_DAYS}d`
   );
   const newJti = uuid();
-  const refreshExpiresAt = expiryFromDays(REFRESH_TOKEN_DAYS);
+  // Rotation renews the token, not the session: the new expiry is still capped
+  // at the original sign-in plus the absolute lifetime, so refreshing forever
+  // cannot keep a session alive forever.
+  const absoluteDeadline = record.createdAt.getTime() + absoluteLifetimeMs();
+  const refreshExpiresAt = new Date(
+    Math.min(expiryFromDays(REFRESH_TOKEN_DAYS).getTime(), absoluteDeadline)
+  );
 
   await prisma.session.update({
     where: { id: record.id },
@@ -176,10 +279,10 @@ export async function getAdminSession(options?: {
   const newAccess = await encryptJwt({ ...payload }, ACCESS_TOKEN_EXP);
 
   store.set(ACCESS_COOKIE, newAccess, {
-    ...cookieBase,
+    ...adminCookieBase,
     expires: expiryFromMinutes(ACCESS_TOKEN_MINUTES),
   });
-  store.set(REFRESH_COOKIE, newRefresh, { ...cookieBase, expires: refreshExpiresAt });
+  store.set(REFRESH_COOKIE, newRefresh, { ...adminCookieBase, expires: refreshExpiresAt });
 
   return payload;
 }
@@ -240,8 +343,8 @@ export async function deleteAdminSession() {
   }
 
   const expired = new Date(0);
-  store.set(ACCESS_COOKIE, '', { ...cookieBase, expires: expired });
-  store.set(REFRESH_COOKIE, '', { ...cookieBase, expires: expired });
+  store.set(ACCESS_COOKIE, '', { ...adminCookieBase, expires: expired });
+  store.set(REFRESH_COOKIE, '', { ...adminCookieBase, expires: expired });
 }
 
 // --------------------------------------
@@ -265,11 +368,25 @@ export interface BidderSessionPayload {
   sid?: string;
 }
 
+/**
+ * The bidder cookie's lifetime.
+ *
+ * Shorter than the previous day-long window: the token inside is the customer's
+ * super-app credential, and the webview can always re-exchange it silently, so
+ * there is no reason to hold one for longer than a shopping session.
+ */
+export function bidderSessionHours(): number {
+  const configured = Number(process.env.BIDDER_SESSION_HOURS);
+  const hours = Number.isFinite(configured) && configured > 0 ? configured : 8;
+  return clamp(hours, 1, 24);
+}
+
 export async function createBidderSession(payload: BidderSessionPayload) {
-  const expires = expiryFromDays(1);
-  const jwt = await encryptJwt({ sid: uuid(), ...payload }, '1d');
+  const hours = bidderSessionHours();
+  const expires = new Date(Date.now() + hours * 60 * 60_000);
+  const jwt = await encryptJwt({ sid: uuid(), ...payload }, `${hours}h`);
   const store = await cookies();
-  store.set(MINIAPP_COOKIE, jwt, { ...cookieBase, expires });
+  store.set(MINIAPP_COOKIE, jwt, { ...bidderCookieBase, expires });
   return jwt;
 }
 
@@ -281,10 +398,14 @@ export async function getBidderSession(): Promise<BidderSessionPayload | null> {
   if (!payload?.bidderId) return null;
   // A real session always carries the super-app token; a test session has none.
   if (!payload.isTest && !payload.superAppToken) return null;
+  // The bypass mints a session with no credential behind it. Honouring one on a
+  // deployment where the bypass has since been switched off would let a cookie
+  // issued during testing keep working in production.
+  if (payload.isTest && process.env.ALLOW_TEST_LOGIN !== 'true') return null;
   return payload;
 }
 
 export async function deleteBidderSession() {
   const store = await cookies();
-  store.set(MINIAPP_COOKIE, '', { ...cookieBase, expires: new Date(0) });
+  store.set(MINIAPP_COOKIE, '', { ...bidderCookieBase, expires: new Date(0) });
 }

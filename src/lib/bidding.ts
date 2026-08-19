@@ -351,7 +351,21 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
       },
     });
     if (error instanceof PaymentError) {
-      throw new BidRejected(error.message, 'PAYMENT_FAILED', error.status, error.debug);
+      // A 5xx from the gateway layer is our fault, and its message says why —
+      // which environment variable is unset, which internal host would not
+      // answer. That belongs in the log, not in a reply to a bidder's phone.
+      // A 4xx is the gateway declining the charge, and the bidder needs to
+      // read that one.
+      const serverSide = error.status >= 500;
+      if (serverSide) console.error('[bidding] payment gateway failure', error);
+      throw new BidRejected(
+        serverSide
+          ? 'Payments are temporarily unavailable. Please try again shortly.'
+          : error.message,
+        'PAYMENT_FAILED',
+        error.status,
+        error.debug
+      );
     }
     throw error;
   }

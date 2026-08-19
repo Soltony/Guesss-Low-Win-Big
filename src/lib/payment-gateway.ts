@@ -4,6 +4,7 @@ import prisma from './prisma';
 import { getSettings } from './settings';
 import { auditExternalRequest, auditExternalResponse, newCorrelationId } from './audit-log';
 import { toNum } from './format';
+import { secretsMatch } from './secrets';
 import {
   describeValue,
   headerMap,
@@ -297,7 +298,11 @@ export function verifyCallbackSignature(
   let matched: { label: string; params: SignatureParams; digest: string } | null = null;
   for (const candidate of candidates) {
     const digest = buildSignature(candidate.params);
-    if (receivedText && digest.toLowerCase() === receivedText) {
+    // Constant time: ordinary string equality returns at the first differing
+    // character, which tells a caller probing the callback how many leading
+    // characters of a forged signature were correct — enough to recover a valid
+    // one digit by digit.
+    if (secretsMatch(digest.toLowerCase(), receivedText)) {
       matched = { ...candidate, digest };
       break;
     }

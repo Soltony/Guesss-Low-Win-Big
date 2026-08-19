@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getBidderSession } from '@/lib/session';
-import { jsonError } from '@/lib/api';
+import { jsonError, readJsonBody } from '@/lib/api';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +22,8 @@ export async function POST(req: NextRequest) {
   const session = await getBidderSession();
   if (!session) return jsonError('Not authenticated', 401);
 
-  const body = await req.json().catch(() => ({}));
+  const body = await readJsonBody(req);
+  if (body === null) return jsonError('Request body is too large.', 413);
   const auctionId = String(body?.auctionId || '');
   if (!auctionId) return jsonError('Auction is required.', 400);
 
