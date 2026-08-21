@@ -51,6 +51,10 @@ export function ImageUploader({
   const [uploading, setUploading] = useState(false);
   const [showUrl, setShowUrl] = useState(false);
   const [dragging, setDragging] = useState(false);
+  // The URL that failed to load, rather than a boolean, so pointing the field
+  // at a different image clears the warning without an effect to reset it.
+  const [brokenUrl, setBrokenUrl] = useState<string | null>(null);
+  const broken = Boolean(value) && brokenUrl === value;
 
   const handleFile = async (file: File | undefined | null) => {
     if (!file) return;
@@ -98,39 +102,62 @@ export function ImageUploader({
       {description && <p className="text-xs text-muted-foreground">{description}</p>}
 
       {value ? (
-        <div className="flex items-center gap-3 rounded-md border border-border bg-secondary/40 p-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={value}
-            alt=""
-            className="h-16 w-16 rounded bg-card object-contain"
-            onError={(event) => {
-              (event.currentTarget as HTMLImageElement).style.opacity = '0.3';
-            }}
-          />
-          <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{value}</p>
-          {!disabled && (
-            <div className="flex shrink-0 gap-1">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={uploading}
-                onClick={() => fileRef.current?.click()}
-              >
-                Replace
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="text-destructive"
-                onClick={() => onChange('')}
-                aria-label="Remove image"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </div>
+        <div className="space-y-2">
+          <div className="flex items-center gap-3 rounded-md border border-border bg-secondary/40 p-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={value}
+              alt=""
+              className={cn(
+                'h-16 w-16 shrink-0 rounded bg-card object-contain',
+                broken && 'opacity-30'
+              )}
+              onError={() => setBrokenUrl(value)}
+              onLoad={() => setBrokenUrl((current) => (current === value ? null : current))}
+            />
+            {/* `break-all` rather than `truncate`: a URL has no spaces to wrap on,
+                so leaving it on one line made it the widest thing in the dialog
+                and stretched every other field to match. Clamped so a long one
+                still cannot push the buttons out of reach. */}
+            <p className="line-clamp-2 min-w-0 flex-1 break-all text-xs text-muted-foreground">
+              {value}
+            </p>
+            {!disabled && (
+              <div className="flex shrink-0 gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={uploading}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  Replace
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive"
+                  onClick={() => onChange('')}
+                  aria-label="Remove image"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {/* A pasted URL that the browser refuses to load looks identical to one
+              that simply has not arrived yet, so say what happened. The usual
+              cause is the content security policy: it only allows images from
+              this site and a short list of known hosts, so artwork linked from
+              anywhere else is blocked before it is ever fetched. */}
+          {broken && (
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              This image could not be loaded. If it is hosted somewhere else, the site&apos;s
+              security policy is most likely blocking that host — upload the file instead, or ask
+              an administrator to add the host to the allowed list.
+            </p>
           )}
         </div>
       ) : disabled ? (
