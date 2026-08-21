@@ -120,9 +120,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!['ACTIVE', 'SUSPENDED', 'DISABLED'].includes(status)) {
       return jsonError('Status must be ACTIVE, SUSPENDED or DISABLED.', 400);
     }
-    if (status !== 'ACTIVE' && id === actor.id) {
-      return jsonError('You cannot deactivate your own account.', 409);
-    }
+    // Checked before the self rule below: when both apply — the last Super
+    // Admin disabling themselves — this is the one that says how to get
+    // unstuck, and it is the constraint that holds for every actor rather than
+    // only for this one.
     if (status !== 'ACTIVE' && target.role.name === SUPER_ADMIN_ROLE) {
       const remaining = await prisma.user.count({
         where: { role: { name: SUPER_ADMIN_ROLE }, status: 'ACTIVE', NOT: { id } },
@@ -130,6 +131,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (remaining === 0) {
         return jsonError('This is the last active Super Admin and cannot be deactivated.', 409);
       }
+    }
+    if (status !== 'ACTIVE' && id === actor.id) {
+      return jsonError('You cannot deactivate your own account.', 409);
     }
     data.status = status;
     if (status !== 'ACTIVE') await revokeAllUserSessions(id);

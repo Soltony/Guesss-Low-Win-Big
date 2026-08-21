@@ -120,10 +120,23 @@ export async function getTopAuctions(take = 5) {
     },
   });
 
+  // Fees actually charged, not the headline fee times the bid count: bids
+  // carried over from an earlier re-auction round and bids from test sessions
+  // are confirmed at a zero fee, and counting them as income would overstate
+  // what the auction earned.
+  const fees = auctions.length
+    ? await prisma.bid.groupBy({
+        by: ['auctionId'],
+        where: { auctionId: { in: auctions.map((a) => a.id) }, status: 'ACTIVE' },
+        _sum: { feeAmount: true },
+      })
+    : [];
+  const feeByAuction = new Map(fees.map((row) => [row.auctionId, toNum(row._sum.feeAmount)]));
+
   return auctions.map((a) => ({
     ...a,
     bidFee: toNum(a.bidFee),
     endAt: a.endAt.toISOString(),
-    estimatedRevenue: toNum(a.bidFee) * a.bidCount,
+    feeRevenue: feeByAuction.get(a.id) ?? 0,
   }));
 }

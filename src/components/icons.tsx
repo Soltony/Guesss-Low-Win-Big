@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { useBrandLogo } from '@/components/brand-provider';
+import { useBrandLogo, useBrandName } from '@/components/brand-provider';
 
 /**
  * GuessLow mark: descending bars with the lowest one picked out — the whole
@@ -45,10 +45,12 @@ export function Logo({ className }: { className?: string }) {
 }
 
 export function LogoWordmark({ className }: { className?: string }) {
+  const name = useBrandName();
+
   return (
     <span className={cn('flex items-center gap-2 font-semibold tracking-tight', className)}>
       <Logo className="h-7 w-7 text-foreground" />
-      <span>GuessLow</span>
+      <span>{name}</span>
     </span>
   );
 }

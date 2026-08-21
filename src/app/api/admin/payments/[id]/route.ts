@@ -47,9 +47,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         },
       });
 
-      let bidResult: { confirmed: boolean; reason?: string } | null = null;
+      // `revive` is what makes this action mean what the operator intends. The
+      // usual reason a payment needs confirming by hand is that the callback
+      // never arrived, and by the time anyone notices, the timeout sweep has
+      // already voided the bid. Without this the payment would flip to SUCCESS
+      // while the bid stayed void — the fee kept, and nothing to show for it in
+      // the bidder's My Bids.
+      let bidResult: { confirmed: boolean; reason?: string; revived?: boolean } | null = null;
       if (payment.bidId) {
-        bidResult = await confirmBid(payment.bidId, { source: 'MANUAL_RECONCILIATION' });
+        bidResult = await confirmBid(payment.bidId, {
+          source: 'MANUAL_RECONCILIATION',
+          revive: true,
+        });
       }
 
       await createAuditLog({
@@ -63,11 +72,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           bidId: payment.bidId,
           note,
           bidConfirmed: bidResult?.confirmed,
+          bidRevived: bidResult?.revived,
           bidReason: bidResult?.reason,
         },
       });
 
-      return NextResponse.json({ ok: true, bidConfirmed: bidResult?.confirmed ?? false });
+      return NextResponse.json({
+        ok: true,
+        bidConfirmed: bidResult?.confirmed ?? false,
+        bidRevived: bidResult?.revived ?? false,
+        bidReason: bidResult?.reason,
+      });
     }
 
     case 'fail': {

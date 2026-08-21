@@ -228,18 +228,23 @@ export function UsersManager({
                           <LockOpen className="h-3.5 w-3.5" />
                         </Button>
                       )}
-                      {user.id !== currentUserId && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className={user.status === 'ACTIVE' ? 'text-destructive' : ''}
-                          onClick={() =>
-                            changeStatus(user, user.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE')
-                          }
-                        >
-                          {user.status === 'ACTIVE' ? 'Disable' : 'Enable'}
-                        </Button>
-                      )}
+                      {/* Offered on every row, including the operator's own.
+                          The rules that stop an account being disabled — your
+                          own, and the last active Super Admin — live on the
+                          server, and hiding the control here meant the only
+                          person who can open this page had no way to reach the
+                          Super Admin rule at all: it never fired and never
+                          explained itself. The refusal is what should be seen. */}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={user.status === 'ACTIVE' ? 'text-destructive' : ''}
+                        onClick={() =>
+                          changeStatus(user, user.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE')
+                        }
+                      >
+                        {user.status === 'ACTIVE' ? 'Disable' : 'Enable'}
+                      </Button>
                     </div>
                   )}
                 </td>

@@ -43,6 +43,7 @@ import {
   MAX_MIN_VIEW_SECONDS,
   type AdFrequency,
 } from '@/lib/types';
+import { splitBrandName, useBrandName } from '@/components/brand-provider';
 import type { TabPermission } from '@/lib/permissions';
 
 const TAB_ICONS: Record<string, typeof Images> = {
@@ -167,6 +168,11 @@ export function ContentManager({
   /** The icon is a platform setting, so editing it needs the settings module. */
   canEditBranding: boolean;
 }) {
+  // The previews below stand in for the real shells, so they have to carry the
+  // configured platform name rather than a baked-in one.
+  const brandName = useBrandName();
+  const [brandHead, brandTail] = splitBrandName(brandName);
+
   const byTab = new Map(tabs.map((tab) => [tab.tab, tab]));
   const bannerPerms = byTab.get('banners') ?? NO_ACCESS;
   const adPerms = byTab.get('ads') ?? NO_ACCESS;
@@ -753,7 +759,7 @@ export function ContentManager({
                     className="h-7 w-7 rounded-lg object-contain"
                   />
                   <span className="text-lg font-semibold tracking-tight text-primary">
-                    GuessLow
+                    {brandName}
                   </span>
                 </div>
 
@@ -766,7 +772,8 @@ export function ContentManager({
                     className="h-8 w-8 rounded-lg object-contain"
                   />
                   <span className="text-[17px] font-bold tracking-tight text-background">
-                    Guess<span className="text-primary">Low</span>
+                    {brandHead}
+                    {brandTail && <span className="text-primary">{brandTail}</span>}
                   </span>
                 </div>
 
@@ -778,7 +785,9 @@ export function ContentManager({
                     alt=""
                     className="h-4 w-4 rounded-sm object-contain"
                   />
-                  <span className="truncate text-xs text-muted-foreground">Content | GuessLow</span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    Content | {brandName}
+                  </span>
                 </div>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">

@@ -72,12 +72,21 @@ export function PaymentActions({
         return;
       }
 
+      // The bid is the half the operator actually cares about, so say what
+      // happened to it rather than only that the payment row moved.
+      const bidNote =
+        action !== 'confirm'
+          ? undefined
+          : data.bidConfirmed === false
+            ? `Payment confirmed, but the linked bid could not be activated. ${data.bidReason ?? ''}`.trim()
+            : data.bidRevived
+              ? 'Payment confirmed and the voided bid was re-instated — it now counts toward the auction and shows in the bidder’s My Bids.'
+              : 'Payment confirmed and the linked bid is now active.';
+
       toast({
-        title: 'Payment updated',
-        description:
-          action === 'confirm' && data.bidConfirmed === false
-            ? 'Payment confirmed, but the linked bid could not be activated — check the bid status.'
-            : undefined,
+        variant: action === 'confirm' && data.bidConfirmed === false ? 'destructive' : 'default',
+        title: action === 'confirm' && data.bidConfirmed === false ? 'Bid not activated' : 'Payment updated',
+        description: bidNote,
       });
       setAction(null);
       setNote('');

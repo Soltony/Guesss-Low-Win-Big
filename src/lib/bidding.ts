@@ -372,32 +372,92 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
 }
 
 /**
+ * Whether a confirmation may be applied to a bid, and whether doing so means
+ * bringing a voided one back.
+ *
+ * `revive` is for manual reconciliation only. A bid whose payment never
+ * confirmed in time is voided by the timeout sweep, and once it is voided the
+ * ordinary path can no longer confirm it — so an operator who later establishes
+ * from the gateway statement that the fee *was* collected had no way to make
+ * that bid count, and the bidder never saw it again in My Bids. With `revive`
+ * the same confirmation is applied to a bid voided for non-payment, which is
+ * exactly the situation manual reconciliation exists for. A round that has
+ * already been decided is still refused: adding a bid to it after the fact
+ * would change a result bidders have been told.
+ */
+export function confirmDecision(
+  bid: { status: string },
+  auction: { code: string; status: string },
+  revive = false
+): { confirm: boolean; reviving: boolean; alreadyActive?: boolean; reason?: string } {
+  if (bid.status === 'ACTIVE') {
+    return { confirm: true, reviving: false, alreadyActive: true, reason: 'Already confirmed.' };
+  }
+
+  // Voided or failed purely because the fee was never confirmed. REFUNDED is
+  // deliberately excluded — that fee was handed back, and re-instating the bid
+  // would count a bid nobody paid for.
+  const reviving = revive && (bid.status === 'VOID' || bid.status === 'FAILED');
+
+  if (bid.status !== 'PENDING_PAYMENT' && !reviving) {
+    return {
+      confirm: false,
+      reviving: false,
+      reason: `Bid is ${bid.status} and cannot be confirmed.`,
+    };
+  }
+
+  if (reviving && (auction.status === 'SETTLED' || auction.status === 'CANCELLED')) {
+    return {
+      confirm: false,
+      reviving: false,
+      reason: `Auction #${auction.code} is already ${auction.status.toLowerCase()}, so this bid can no longer be counted. Reverse the payment to refund the fee instead.`,
+    };
+  }
+
+  return { confirm: true, reviving };
+}
+
+/**
  * Marks a bid as paid and counted. Idempotent — payment gateways retry
  * callbacks, and a double-count would corrupt the auction counters.
  */
 export async function confirmBid(
   bidId: string,
-  meta: { source: string; txnRef?: string; paidByNumber?: string }
-): Promise<{ confirmed: boolean; reason?: string }> {
+  meta: { source: string; txnRef?: string; paidByNumber?: string; revive?: boolean }
+): Promise<{ confirmed: boolean; reason?: string; revived?: boolean }> {
   const bid = await prisma.bid.findUnique({
     where: { id: bidId },
-    include: { auction: { select: { id: true, code: true, endAt: true, autoExtendMinutes: true } } },
+    include: {
+      auction: {
+        select: { id: true, code: true, status: true, endAt: true, autoExtendMinutes: true },
+      },
+    },
   });
   if (!bid) return { confirmed: false, reason: 'Bid not found.' };
-  if (bid.status === 'ACTIVE') return { confirmed: true, reason: 'Already confirmed.' };
-  if (bid.status !== 'PENDING_PAYMENT') {
-    return { confirmed: false, reason: `Bid is ${bid.status} and cannot be confirmed.` };
-  }
+
+  const decision = confirmDecision(bid, bid.auction, meta.revive);
+  if (!decision.confirm) return { confirmed: false, reason: decision.reason };
+  if (decision.alreadyActive) return { confirmed: true, reason: decision.reason };
+  const reviving = decision.reviving;
 
   const isFirstBidOnAuction =
     (await prisma.bid.count({
       where: { auctionId: bid.auctionId, bidderId: bid.bidderId, status: 'ACTIVE' },
     })) === 0;
 
+  // A revived bid that was funded by a prepaid round has to take its credit
+  // back — the void handed it out again when the bid stopped counting.
+  if (reviving && bid.carriedOver) await claimBidCredit(bid.bidderId, bid.auctionId);
+
   await prisma.$transaction(async (tx) => {
     await tx.bid.update({
       where: { id: bidId },
-      data: { status: 'ACTIVE', confirmedAt: new Date() },
+      data: {
+        status: 'ACTIVE',
+        confirmedAt: new Date(),
+        ...(reviving ? { voidedAt: null, voidReason: null } : {}),
+      },
     });
 
     await tx.auction.update({
@@ -418,8 +478,10 @@ export async function confirmBid(
     });
   });
 
-  // Anti-sniping: a bid in the closing window pushes the end time out.
-  const extendMinutes = bid.auction.autoExtendMinutes;
+  // Anti-sniping: a bid in the closing window pushes the end time out. A bid
+  // being reconciled long after the fact is not a late bid arriving — it was
+  // placed when it was placed — so it must not move the end time again.
+  const extendMinutes = reviving ? 0 : bid.auction.autoExtendMinutes;
   if (extendMinutes > 0) {
     const remaining = bid.auction.endAt.getTime() - Date.now();
     if (remaining > 0 && remaining <= extendMinutes * 60 * 1000) {
@@ -447,10 +509,15 @@ export async function confirmBid(
     action: 'BID_CONFIRMED',
     entity: 'Bid',
     entityId: bidId,
-    details: { source: meta.source, txnRef: meta.txnRef, paidByNumber: meta.paidByNumber },
+    details: {
+      source: meta.source,
+      txnRef: meta.txnRef,
+      paidByNumber: meta.paidByNumber,
+      ...(reviving ? { revivedFrom: bid.status, previousVoidReason: bid.voidReason } : {}),
+    },
   });
 
-  return { confirmed: true };
+  return { confirmed: true, revived: reviving };
 }
 
 /** Marks a bid failed when its payment does not go through. */

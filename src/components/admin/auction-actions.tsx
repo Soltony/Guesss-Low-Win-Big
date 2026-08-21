@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Ban, Loader2, RefreshCw, Rocket, Star, Trophy } from 'lucide-react';
+import { Ban, Loader2, RefreshCw, Rocket, Star, Trash2, Trophy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -30,15 +30,17 @@ interface Props {
   };
   canUpdate: boolean;
   canSettle: boolean;
+  canDelete: boolean;
 }
 
-export function AuctionActions({ auction, canUpdate, canSettle }: Props) {
+export function AuctionActions({ auction, canUpdate, canSettle, canDelete }: Props) {
   const router = useRouter();
   const { toast } = useToast();
   const [busy, setBusy] = useState<string | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [settleOpen, setSettleOpen] = useState(false);
   const [reauctionOpen, setReauctionOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [reason, setReason] = useState('');
 
   const run = async (action: string, body: Record<string, unknown> = {}) => {
@@ -83,6 +85,33 @@ export function AuctionActions({ auction, canUpdate, canSettle }: Props) {
     }
   };
 
+  /**
+   * Deleting is separate from the action endpoint above — it is a DELETE on the
+   * auction itself, and the row is gone afterwards, so the page it was rendered
+   * on has to be left behind rather than refreshed.
+   */
+  const remove = async () => {
+    setBusy('delete');
+    try {
+      const response = await fetch(`/api/admin/auctions/${auction.id}`, { method: 'DELETE' });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        toast({ variant: 'destructive', title: 'Delete failed', description: data?.error });
+        return;
+      }
+
+      toast({ title: `Auction #${auction.code} deleted` });
+      setDeleteOpen(false);
+      router.replace('/admin/auctions');
+      router.refresh();
+    } catch {
+      toast({ variant: 'destructive', title: 'Network error' });
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const canPublish =
     canUpdate && (auction.status === 'DRAFT' || auction.status === 'PENDING_APPROVAL');
   const canCancel =
@@ -93,8 +122,14 @@ export function AuctionActions({ auction, canUpdate, canSettle }: Props) {
   // the states the automatic path declined — an operator can override those.
   const canReauction =
     canUpdate && auction.status === 'SETTLED' && auction.reauctionState !== 'CREATED';
+  // Whether the server will actually accept the delete. The button is offered
+  // to anyone holding the right regardless, so an operator who tries it on an
+  // auction that has been public is told why it is refused instead of being
+  // left looking for a control that is not there.
+  const deletable = auction.status === 'DRAFT' && auction.bidCount === 0;
 
-  if (!canPublish && !canCancel && !canSettleNow && !canResettle && !canUpdate) return null;
+  if (!canPublish && !canCancel && !canSettleNow && !canResettle && !canUpdate && !canDelete)
+    return null;
 
   return (
     <>
@@ -171,6 +206,18 @@ export function AuctionActions({ auction, canUpdate, canSettle }: Props) {
             Cancel auction
           </Button>
         )}
+
+        {canDelete && (
+          <Button
+            className="w-full text-destructive hover:text-destructive"
+            variant="outline"
+            onClick={() => setDeleteOpen(true)}
+            disabled={busy !== null}
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            Delete auction
+          </Button>
+        )}
       </div>
 
       <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>
@@ -202,6 +249,35 @@ export function AuctionActions({ auction, canUpdate, canSettle }: Props) {
             >
               {busy === 'cancel' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Cancel auction
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete auction #{auction.code}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deletable
+                ? 'This draft has never been public and has no bids, so it can be removed for good. This cannot be undone.'
+                : `Only a draft auction with no bids can be deleted. This one is ${auction.status.toLowerCase().replace(/_/g, ' ')}${
+                    auction.bidCount > 0 ? ` and already has ${auction.bidCount} confirmed bid(s)` : ''
+                  } — cancel it instead, so its bid and payment history survives.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep auction</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy !== null}
+              onClick={(event) => {
+                event.preventDefault();
+                remove();
+              }}
+            >
+              {busy === 'delete' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Delete auction
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

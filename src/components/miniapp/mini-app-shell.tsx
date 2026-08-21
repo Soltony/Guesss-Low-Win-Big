@@ -7,6 +7,7 @@ import { LANGUAGES } from '@/lib/i18n';
 import { LanguageProvider, useLanguage } from './language-provider';
 import { AdPopup } from './ad-popup';
 import { Logo } from '@/components/icons';
+import { splitBrandName, useBrandName } from '@/components/brand-provider';
 import type { Language } from '@/lib/types';
 
 export interface ShellUser {
@@ -50,6 +51,9 @@ function LanguageToggle() {
 }
 
 function TopBar({ user }: { user: ShellUser | null }) {
+  const name = useBrandName();
+  const [head, tail] = splitBrandName(name);
+
   return (
     <header className="gl-ink sticky top-0 z-30">
       <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-4 py-3">
@@ -59,11 +63,12 @@ function TopBar({ user }: { user: ShellUser | null }) {
         <Link
           href={user ? '/' : '/auctions'}
           className="flex items-center gap-2"
-          aria-label="GuessLow home"
+          aria-label={`${name} home`}
         >
           <Logo className="h-8 w-8 text-black" />
           <span className="text-[17px] font-bold tracking-tight">
-            Guess<span className="text-primary">Low</span>
+            {head}
+            {tail && <span className="text-primary">{tail}</span>}
           </span>
         </Link>
 

@@ -72,6 +72,36 @@ export default async function ReportsPage({
   const categories = await prisma.category.findMany({ select: { id: true, name: true } });
   const categoryNames = new Map(categories.map((c) => [c.id, c.name]));
 
+  // Fee income per auction, taken from what each bid was actually charged
+  // rather than from the auction's fee times its bid count. Not every confirmed
+  // bid raised a fee: a bid carried into a re-auction round was paid for in an
+  // earlier round and is charged nothing, and a bid placed from a test session
+  // is charged nothing at all. Multiplying the headline fee by the bid count
+  // counted both as income the platform never collected.
+  const settledIds = auctionPerformance.map((auction) => auction.id);
+  const feeRows = settledIds.length
+    ? await prisma.bid.groupBy({
+        by: ['auctionId'],
+        where: { auctionId: { in: settledIds }, status: 'ACTIVE' },
+        _sum: { feeAmount: true },
+      })
+    : [];
+  const feesByAuction = new Map(
+    feeRows.map((row) => [row.auctionId, toNum(row._sum.feeAmount)])
+  );
+  // Bids that actually carried a fee, so the income figure can be read against
+  // the bid count it came from instead of looking short of it.
+  const chargedRows = settledIds.length
+    ? await prisma.bid.groupBy({
+        by: ['auctionId'],
+        where: { auctionId: { in: settledIds }, status: 'ACTIVE', feeAmount: { gt: 0 } },
+        _count: { _all: true },
+      })
+    : [];
+  const chargedByAuction = new Map(
+    chargedRows.map((row) => [row.auctionId, row._count._all])
+  );
+
   const canSeeMoney = hasPermission(user, 'payments', 'read');
   const revenue = toNum(feeRevenue._sum.amount);
 
@@ -81,7 +111,7 @@ export default async function ReportsPage({
     0
   );
   const auctionRevenue = auctionPerformance.reduce(
-    (sum, auction) => sum + toNum(auction.bidFee) * auction.bidCount,
+    (sum, auction) => sum + (feesByAuction.get(auction.id) ?? 0),
     0
   );
 
@@ -169,26 +199,40 @@ export default async function ReportsPage({
             <div className="border-b border-border px-4 py-3">
               <h2 className="font-semibold">Settled auction performance</h2>
               <p className="text-xs text-muted-foreground">
-                Fee income versus the retail value handed out.
+                {canSeeMoney
+                  ? 'Fee income actually charged, versus the retail value handed out.'
+                  : 'Settlement volume. Monetary figures need the payments permission.'}
               </p>
             </div>
-            <table className="w-full min-w-[820px] text-sm">
+            <table className={`w-full text-sm ${canSeeMoney ? 'min-w-[820px]' : 'min-w-[420px]'}`}>
               <thead className="border-b border-border bg-secondary/50 text-left">
                 <tr>
                   <th className="px-4 py-2.5 font-semibold">Auction</th>
                   <th className="px-4 py-2.5 text-right font-semibold">Bids</th>
-                  <th className="px-4 py-2.5 text-right font-semibold">Fee income</th>
-                  <th className="px-4 py-2.5 text-right font-semibold">Retail value</th>
-                  <th className="px-4 py-2.5 text-right font-semibold">Winning bid</th>
-                  <th className="px-4 py-2.5 text-right font-semibold">Margin</th>
+                  {/* Every column below this point is money. A role holding
+                      reports:read alone must not be able to read fee income,
+                      prize value or a winning bid off this table — the stat
+                      tiles above already withhold the same figures. */}
+                  {canSeeMoney && (
+                    <>
+                      <th className="px-4 py-2.5 text-right font-semibold">Fee income</th>
+                      <th className="px-4 py-2.5 text-right font-semibold">Retail value</th>
+                      <th className="px-4 py-2.5 text-right font-semibold">Winning bid</th>
+                      <th className="px-4 py-2.5 text-right font-semibold">Margin</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {auctionPerformance.length === 0 && (
-                  <EmptyRow colSpan={6} message="No auctions were settled in this range." />
+                  <EmptyRow
+                    colSpan={canSeeMoney ? 6 : 2}
+                    message="No auctions were settled in this range."
+                  />
                 )}
                 {auctionPerformance.map((auction) => {
-                  const income = toNum(auction.bidFee) * auction.bidCount;
+                  const income = feesByAuction.get(auction.id) ?? 0;
+                  const charged = chargedByAuction.get(auction.id) ?? 0;
                   const cost = toNum(auction.item.retailPrice);
                   const margin = income - cost;
 
@@ -205,27 +249,38 @@ export default async function ReportsPage({
                           {auction.title} · {auction.category.name}
                         </p>
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{auction.bidCount}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums">
-                        {income.toFixed(2)}
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
-                        {cost.toFixed(2)}
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">
-                        {auction.winner ? (
-                          toNum(auction.winner.amount).toFixed(2)
-                        ) : (
-                          <span className="text-xs text-muted-foreground">No winner</span>
+                        {auction.bidCount}
+                        {charged !== auction.bidCount && (
+                          <p className="text-xs font-normal text-muted-foreground">
+                            {charged} charged
+                          </p>
                         )}
                       </td>
-                      <td
-                        className={`px-4 py-2.5 text-right font-semibold tabular-nums ${
-                          margin >= 0 ? 'text-success' : 'text-destructive'
-                        }`}
-                      >
-                        {margin.toFixed(2)}
-                      </td>
+                      {canSeeMoney && (
+                        <>
+                          <td className="px-4 py-2.5 text-right tabular-nums">
+                            {income.toFixed(2)}
+                          </td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+                            {cost.toFixed(2)}
+                          </td>
+                          <td className="px-4 py-2.5 text-right tabular-nums">
+                            {auction.winner ? (
+                              toNum(auction.winner.amount).toFixed(2)
+                            ) : (
+                              <span className="text-xs text-muted-foreground">No winner</span>
+                            )}
+                          </td>
+                          <td
+                            className={`px-4 py-2.5 text-right font-semibold tabular-nums ${
+                              margin >= 0 ? 'text-success' : 'text-destructive'
+                            }`}
+                          >
+                            {margin.toFixed(2)}
+                          </td>
+                        </>
+                      )}
                     </tr>
                   );
                 })}

@@ -59,6 +59,7 @@ export default async function AdminAuctionDetail({
 
   const canUpdate = hasPermission(user, 'auctions', 'update');
   const canSettle = hasPermission(user, 'auctions', 'approve');
+  const canDelete = hasPermission(user, 'auctions', 'delete');
   const canSeeBids = hasPermission(user, 'bids', 'read');
 
   const [paidFees, recentBids, distribution, rounds, credits, participantTotal, unlisted] =
@@ -497,6 +498,7 @@ export default async function AdminAuctionDetail({
             }}
             canUpdate={canUpdate}
             canSettle={canSettle}
+            canDelete={canDelete}
           />
 
           {/* Participation */}
