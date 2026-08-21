@@ -606,6 +606,7 @@ model Banner {
   titleAm      String?
   subtitle     String?
   imageUrl     String    @db.NVarChar(Max)
+  imageAlt     String?   @db.NVarChar(Max) // null/empty = decorative; set when the artwork carries wording the title does not
   linkUrl      String?
   displayOrder Int       @default(0)
   status       String    @default("ACTIVE") // ACTIVE | INACTIVE
@@ -627,6 +628,7 @@ model Advertisement {
   body     String? @db.NVarChar(Max)
   bodyAm   String? @db.NVarChar(Max)
   imageUrl String? @db.NVarChar(Max)
+  imageAlt String? @db.NVarChar(Max) // null/empty = decorative; see Banner.imageAlt
 
   ctaLabel   String?
   ctaLabelAm String?

@@ -39,6 +39,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (!imageUrl) return jsonError('Banner image URL cannot be empty.', 400);
       data.imageUrl = imageUrl;
     }
+    // Cleared back to null rather than '' so "decorative" is one value, not two.
+    if (body.imageAlt !== undefined) data.imageAlt = String(body.imageAlt).trim() || null;
     if (body.linkUrl !== undefined) data.linkUrl = String(body.linkUrl) || null;
     if (body.displayOrder !== undefined) {
       data.displayOrder = Math.trunc(Number(body.displayOrder) || 0);
@@ -79,6 +81,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.body !== undefined) data.body = String(body.body).trim() || null;
     if (body.bodyAm !== undefined) data.bodyAm = String(body.bodyAm) || null;
     if (body.imageUrl !== undefined) data.imageUrl = String(body.imageUrl).trim() || null;
+    if (body.imageAlt !== undefined) data.imageAlt = String(body.imageAlt).trim() || null;
     if (body.ctaLabel !== undefined) data.ctaLabel = String(body.ctaLabel) || null;
     if (body.ctaLabelAm !== undefined) data.ctaLabelAm = String(body.ctaLabelAm) || null;
     if (body.linkUrl !== undefined) data.linkUrl = String(body.linkUrl).trim() || null;

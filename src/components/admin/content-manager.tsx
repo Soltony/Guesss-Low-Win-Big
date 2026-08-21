@@ -63,6 +63,8 @@ export interface BannerRow {
   titleAm: string;
   subtitle: string;
   imageUrl: string;
+  /** What the artwork says, for anyone who cannot see it. '' = decorative. */
+  imageAlt: string;
   linkUrl: string;
   displayOrder: number;
   status: string;
@@ -75,6 +77,8 @@ export interface AdRow {
   body: string;
   bodyAm: string;
   imageUrl: string;
+  /** What the artwork says, for anyone who cannot see it. '' = decorative. */
+  imageAlt: string;
   ctaLabel: string;
   ctaLabelAm: string;
   linkUrl: string;
@@ -107,6 +111,7 @@ const blankBanner: BannerRow = {
   titleAm: '',
   subtitle: '',
   imageUrl: '',
+  imageAlt: '',
   linkUrl: '',
   displayOrder: 0,
   status: 'ACTIVE',
@@ -119,6 +124,7 @@ const blankAd: AdRow = {
   body: '',
   bodyAm: '',
   imageUrl: '',
+  imageAlt: '',
   ctaLabel: '',
   ctaLabelAm: '',
   linkUrl: '',
@@ -857,6 +863,22 @@ export function ContentManager({
                 onChange={(imageUrl) => setBannerForm({ ...bannerForm, imageUrl })}
               />
               <div className="space-y-1.5">
+                <Label htmlFor="b-alt">Image description</Label>
+                <Input
+                  id="b-alt"
+                  value={bannerForm.imageAlt}
+                  onChange={(event) =>
+                    setBannerForm({ ...bannerForm, imageAlt: event.target.value })
+                  }
+                  placeholder="e.g. 50% off bid fees this weekend"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Read aloud to bidders using a screen reader. Fill this in when the artwork
+                  carries wording or an offer the title and subtitle do not already say. Leave it
+                  empty when the image is purely decorative.
+                </p>
+              </div>
+              <div className="space-y-1.5">
                 <Label htmlFor="b-link">Link URL</Label>
                 <Input
                   id="b-link"
@@ -965,6 +987,23 @@ export function ContentManager({
                 value={adForm.imageUrl}
                 onChange={(imageUrl) => setAdForm({ ...adForm, imageUrl })}
               />
+
+              {adForm.imageUrl && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="a-alt">Image description</Label>
+                  <Input
+                    id="a-alt"
+                    value={adForm.imageAlt}
+                    onChange={(event) => setAdForm({ ...adForm, imageAlt: event.target.value })}
+                    placeholder="e.g. Poster reading “Double your bids, Friday only”"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Read aloud to bidders using a screen reader. Advertiser artwork usually has
+                    its message inside the image — describe it here unless the title and body
+                    below already say the same thing.
+                  </p>
+                </div>
+              )}
 
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="space-y-1.5 sm:col-span-3">

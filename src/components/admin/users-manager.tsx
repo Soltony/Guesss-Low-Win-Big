@@ -195,6 +195,7 @@ export function UsersManager({
                         variant="ghost"
                         size="sm"
                         title="Edit"
+                        aria-label={`Edit ${user.fullName}`}
                         onClick={() =>
                           setForm({
                             id: user.id,
@@ -213,6 +214,7 @@ export function UsersManager({
                           variant="ghost"
                           size="sm"
                           title="Reset password"
+                          aria-label={`Reset password for ${user.fullName}`}
                           onClick={() => act(user, 'reset-password')}
                         >
                           <KeyRound className="h-3.5 w-3.5" />
@@ -223,6 +225,7 @@ export function UsersManager({
                           variant="ghost"
                           size="sm"
                           title="Unlock"
+                          aria-label={`Unlock ${user.fullName}`}
                           onClick={() => act(user, 'unlock')}
                         >
                           <LockOpen className="h-3.5 w-3.5" />

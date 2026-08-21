@@ -12,6 +12,8 @@ interface PopupAd {
   body: string | null;
   bodyAm: string | null;
   imageUrl: string | null;
+  /** Text alternative for the artwork; null means it is purely decorative. */
+  imageAlt: string | null;
   ctaLabel: string | null;
   ctaLabelAm: string | null;
   linkUrl: string | null;
@@ -202,7 +204,14 @@ export function AdPopup() {
           // keeps logos and text inside the frame instead of cropping them.
           <div className="flex items-center justify-center bg-white p-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={ad.imageUrl} alt="" className="max-h-56 w-full object-contain" />
+            {/* Advertiser creative usually carries its message inside the
+                image. Empty alt is the fallback for artwork that adds nothing
+                to the title and body below it. */}
+            <img
+              src={ad.imageUrl}
+              alt={ad.imageAlt?.trim() || ''}
+              className="max-h-56 w-full object-contain"
+            />
           </div>
         )}
 

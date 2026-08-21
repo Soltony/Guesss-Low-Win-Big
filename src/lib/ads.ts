@@ -27,6 +27,8 @@ export interface PopupAd {
   body: string | null;
   bodyAm: string | null;
   imageUrl: string | null;
+  /** Text alternative for the artwork; null means it is purely decorative. */
+  imageAlt: string | null;
   ctaLabel: string | null;
   ctaLabelAm: string | null;
   linkUrl: string | null;
@@ -153,6 +155,7 @@ export async function popupAdsForBidder(bidder: {
       body: ad.body,
       bodyAm: ad.bodyAm,
       imageUrl: ad.imageUrl,
+      imageAlt: ad.imageAlt,
       ctaLabel: ad.ctaLabel,
       ctaLabelAm: ad.ctaLabelAm,
       linkUrl: ad.linkUrl,

@@ -10,6 +10,8 @@ export interface HomeBanner {
   titleAm: string | null;
   subtitle: string | null;
   imageUrl: string;
+  /** Operator-supplied description of the artwork; null when it is decorative. */
+  imageAlt: string | null;
   linkUrl: string | null;
 }
 
@@ -45,14 +47,18 @@ export function BannerCarousel({ banners }: { banners: HomeBanner[] }) {
             banner.linkUrl && 'gl-card-interactive'
           );
 
-          // `alt` is empty because the title below is real text in the same
-          // card — a screen reader would otherwise hear the headline twice.
+          // Falls back to empty — decorative — because the title below is real
+          // text in the same card, and repeating it as `alt` would make a
+          // screen reader announce the headline twice. That default is only
+          // right while the artwork says nothing the copy does not; a banner
+          // with the offer typeset into the image needs its own description,
+          // which is what `imageAlt` carries.
           const content = (
             <>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={banner.imageUrl}
-                alt=""
+                alt={banner.imageAlt?.trim() || ''}
                 className="absolute inset-0 h-full w-full object-cover"
                 loading="lazy"
               />

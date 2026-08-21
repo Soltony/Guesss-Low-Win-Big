@@ -208,6 +208,7 @@ export async function getHomeData() {
       titleAm: b.titleAm,
       subtitle: b.subtitle,
       imageUrl: b.imageUrl,
+      imageAlt: b.imageAlt,
       linkUrl: b.linkUrl,
     })),
     categories,

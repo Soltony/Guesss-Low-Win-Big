@@ -265,6 +265,7 @@ export function ParticipantListManager({
                         variant="ghost"
                         size="sm"
                         title="Rename"
+                        aria-label={`Rename ${list.name}`}
                         onClick={() =>
                           setDetailsForm({
                             id: list.id,
@@ -281,6 +282,7 @@ export function ParticipantListManager({
                         variant="ghost"
                         size="sm"
                         title={list.active ? 'Archive' : 'Restore'}
+                        aria-label={`${list.active ? 'Archive' : 'Restore'} ${list.name}`}
                         onClick={() =>
                           act(
                             `/api/admin/participant-lists/${list.id}`,
@@ -306,6 +308,7 @@ export function ParticipantListManager({
                         size="sm"
                         className="text-destructive"
                         title="Delete"
+                        aria-label={`Delete ${list.name}`}
                         onClick={() => setDeleting(list)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
