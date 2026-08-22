@@ -403,9 +403,13 @@ export function ContentManager({
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2.5">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
+                        {/* The stored description when there is one, else the
+                            banner's own title — artwork that fails to load
+                            then names itself in the thumbnail instead of
+                            leaving an unlabelled broken frame. */}
                         <img
                           src={banner.imageUrl}
-                          alt=""
+                          alt={banner.imageAlt.trim() || banner.title}
                           className="h-10 w-16 rounded object-cover"
                           loading="lazy"
                         />
@@ -542,7 +546,7 @@ export function ContentManager({
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={ad.imageUrl}
-                            alt=""
+                            alt={ad.imageAlt.trim() || ad.title}
                             className="h-10 w-16 rounded object-cover"
                             loading="lazy"
                           />
