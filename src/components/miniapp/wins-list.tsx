@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CheckCircle2, Loader2, PackageCheck, Trophy } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Loader2, PackageCheck, ScrollText, Trophy } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { MiniHero } from './section-heading';
+import { BidLedgerSheet } from './bid-ledger-sheet';
 import { useLanguage } from './language-provider';
 import { Badge } from '@/components/ui/badge';
 
@@ -131,6 +132,45 @@ function ClaimForm({
   );
 }
 
+/**
+ * The published record behind one win.
+ *
+ * Its own component so each row carries its own open state, rather than the
+ * list tracking a map of them — and so the sheet, which fetches its summary
+ * only when opened, stays inert until somebody actually asks.
+ */
+function WinLedger({ code, currency }: { code: string; currency: string }) {
+  const { t } = useLanguage();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        className="mt-3 flex w-full items-center justify-between gap-2 border-t border-border pt-3 text-left text-xs font-bold transition-colors hover:text-primary"
+      >
+        <span className="flex items-center gap-2">
+          <ScrollText className="h-4 w-4 text-primary" />
+          {t('ledger.open')}
+        </span>
+        <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+      </button>
+
+      <BidLedgerSheet
+        auctionCode={code}
+        currency={currency}
+        winnerName={t('ledger.youWon')}
+        connected
+        open={open}
+        onOpenChange={setOpen}
+      />
+    </>
+  );
+}
+
 export function WinsList({
   wins,
   defaultName,
@@ -241,6 +281,8 @@ export function WinsList({
                   {win.fulfilledAt ? new Date(win.fulfilledAt).toLocaleDateString('en-GB') : ''}
                 </p>
               )}
+
+              <WinLedger code={win.auctionCode} currency={currency} />
             </li>
           );
         })}

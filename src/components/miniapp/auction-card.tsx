@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { ArrowRight, Flame, Lock, Package, Users } from 'lucide-react';
+import { ArrowRight, Crown, Flame, Lock, Package, ScrollText, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { compactNumber } from '@/lib/format';
 import { Countdown } from './countdown';
 import { BidSheet } from './bid-sheet';
+import { BidLedgerSheet } from './bid-ledger-sheet';
 import { useLanguage } from './language-provider';
 import { FavoriteButton } from './favorite-button';
 import type { PublicAuction } from '@/lib/miniapp-data';
@@ -67,6 +68,7 @@ export function AuctionCard({
 }) {
   const { t } = useLanguage();
   const [bidding, setBidding] = useState(false);
+  const [ledgerOpen, setLedgerOpen] = useState(false);
   const currency = auction.currency === 'ETB' ? 'Br' : auction.currency;
   const isLive = auction.status === 'LIVE';
   const endsWithin24h = new Date(auction.endAt).getTime() - Date.now() < 86_400_000;
@@ -144,26 +146,51 @@ export function AuctionCard({
           )}
         </p>
 
-        {/* The hook: what you could pay, against what it is worth. */}
-        <div className="mt-3 flex items-end justify-between gap-3 rounded-xl bg-secondary/70 px-3 py-2.5">
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Bids start at
-            </p>
-            <p className="text-2xl font-bold leading-none tracking-tight">
-              {auction.minBidAmount.toFixed(2)}
-              <span className="ml-1 text-sm font-semibold text-muted-foreground">{currency}</span>
-            </p>
+        {/* Once an auction is over, the entry price is no longer the story —
+            the result is. The same slot carries whichever one is live. */}
+        {auction.result ? (
+          <div className="mt-3 flex items-end justify-between gap-3 rounded-xl border border-primary/40 bg-primary/10 px-3 py-2.5">
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {t('auction.winner')}
+              </p>
+              <p className="flex items-center gap-1.5 truncate text-sm font-bold">
+                <Crown className="h-3.5 w-3.5 shrink-0 text-primary" />
+                {auction.result.winnerName ?? 'A GuessLow bidder'}
+              </p>
+            </div>
+            <div className="shrink-0 text-right">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {t('auction.winningBid')}
+              </p>
+              <p className="text-2xl font-bold leading-none tracking-tight text-primary">
+                {auction.result.amount.toFixed(2)}
+                <span className="ml-1 text-sm font-semibold text-muted-foreground">{currency}</span>
+              </p>
+            </div>
           </div>
-          <div className="text-right">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              {t('auction.bidFee')}
-            </p>
-            <p className="text-sm font-bold tabular-nums">
-              {auction.bidFee.toFixed(2)} {currency}
-            </p>
+        ) : (
+          /* The hook: what you could pay, against what it is worth. */
+          <div className="mt-3 flex items-end justify-between gap-3 rounded-xl bg-secondary/70 px-3 py-2.5">
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Bids start at
+              </p>
+              <p className="text-2xl font-bold leading-none tracking-tight">
+                {auction.minBidAmount.toFixed(2)}
+                <span className="ml-1 text-sm font-semibold text-muted-foreground">{currency}</span>
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {t('auction.bidFee')}
+              </p>
+              <p className="text-sm font-bold tabular-nums">
+                {auction.bidFee.toFixed(2)} {currency}
+              </p>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="mt-3 flex items-center justify-between gap-3">
           <div>
@@ -214,6 +241,36 @@ export function AuctionCard({
           )}
         </div>
       </div>
+
+      {/* Anyone can read the record of a finished auction, whether or not they
+          bid in it — that is the point of publishing it. The sheet fetches its
+          own summary when opened, so a list of these costs nothing to render. */}
+      {auction.ledgerPublished && (
+        <>
+          <button
+            type="button"
+            onClick={() => setLedgerOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={ledgerOpen}
+            className="flex w-full items-center justify-between gap-2 border-t border-border px-4 py-3 text-left text-xs font-bold transition-colors hover:bg-secondary"
+          >
+            <span className="flex items-center gap-2">
+              <ScrollText className="h-4 w-4 text-primary" />
+              {t('ledger.open')}
+            </span>
+            <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+          </button>
+
+          <BidLedgerSheet
+            auctionCode={auction.code}
+            currency={currency}
+            winnerName={auction.result?.winnerName ?? null}
+            connected={connected}
+            open={ledgerOpen}
+            onOpenChange={setLedgerOpen}
+          />
+        </>
+      )}
 
       {isLive && connected && !blockedReason && (
         <BidSheet

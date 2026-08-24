@@ -239,11 +239,14 @@ export function HomeView({
       {/* ---------- Recent winners ---------- */}
       {recentWinners.length > 0 && (
         <section className="pt-8">
+          {/* This section is everyone's winners, so it opens the public list
+              rather than the reader's own wins — which the profile menu
+              already links to. */}
           <SectionHeading
             title="Recent winners"
             subtitle="Real prizes, real bids."
-            href="/wins"
-            hrefLabel={t('wins.title')}
+            href="/auctions?status=WINNERS"
+            hrefLabel={t('home.allWinners')}
             icon={Trophy}
           />
           <ul className="gl-card mx-4 divide-y divide-border overflow-hidden">
@@ -262,12 +265,14 @@ export function HomeView({
                     <Trophy className="h-4 w-4 text-primary" strokeWidth={1.75} />
                   )}
                 </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{win.title}</p>
+                {/* The strip is a teaser; the auction page behind it carries
+                    the winner card and the published bid record. */}
+                <Link href={`/auctions/${win.code}`} className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold hover:underline">{win.title}</p>
                   <p className="text-xs text-muted-foreground">
                     {win.winner} · <span className="font-mono">#{win.code}</span>
                   </p>
-                </div>
+                </Link>
                 <div className="shrink-0 text-right">
                   <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                     Paid

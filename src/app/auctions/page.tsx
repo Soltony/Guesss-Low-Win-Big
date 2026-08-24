@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 
 export const metadata = { title: 'Auctions' };
 
-type Status = 'ALL' | 'LIVE' | 'ENDING_SOON' | 'ENDED';
+type Status = 'ALL' | 'LIVE' | 'ENDING_SOON' | 'ENDED' | 'WINNERS';
 
 export default async function AuctionsPage({
   searchParams,
@@ -19,7 +19,7 @@ export default async function AuctionsPage({
   searchParams: Promise<{ category?: string; q?: string; status?: string }>;
 }) {
   const params = await searchParams;
-  const status = (['ALL', 'LIVE', 'ENDING_SOON', 'ENDED'] as const).includes(
+  const status = (['ALL', 'LIVE', 'ENDING_SOON', 'ENDED', 'WINNERS'] as const).includes(
     params.status as Status
   )
     ? (params.status as Status)

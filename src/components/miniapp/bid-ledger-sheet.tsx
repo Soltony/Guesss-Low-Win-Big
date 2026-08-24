@@ -10,7 +10,12 @@ import type { HistogramBar, LedgerOverview, LedgerRow, LedgerScope } from '@/lib
 interface Props {
   auctionCode: string;
   currency: string;
-  overview: LedgerOverview;
+  /**
+   * The summary, when the caller already has it. A page that renders one
+   * auction passes it from the server so the sheet opens filled in; a card in
+   * a list of fifty leaves it out and the sheet fetches its own.
+   */
+  overview?: LedgerOverview | null;
   winnerName: string | null;
   connected: boolean;
   open: boolean;
@@ -30,7 +35,7 @@ interface Props {
 export function BidLedgerSheet({
   auctionCode,
   currency,
-  overview,
+  overview: given = null,
   winnerName,
   connected,
   open,
@@ -38,9 +43,12 @@ export function BidLedgerSheet({
 }: Props) {
   const { t } = useLanguage();
 
+  const [fetched, setFetched] = useState<LedgerOverview | null>(null);
+  const overview = given ?? fetched;
+
   // With no winner there is no decisive stretch to open on, so the whole space
   // is the only honest default.
-  const defaultScope: LedgerScope = overview.winningAmount === null ? 'all' : 'proof';
+  const defaultScope: LedgerScope = overview?.winningAmount == null ? 'all' : 'proof';
 
   const [scope, setScope] = useState<LedgerScope>(defaultScope);
   const [rows, setRows] = useState<LedgerRow[]>([]);
@@ -81,15 +89,62 @@ export function BidLedgerSheet({
     [auctionCode]
   );
 
-  // The sheet is mounted with the page, so the first page waits until it is
-  // actually opened rather than costing every visitor a request.
+  // Nothing is fetched until the sheet is actually opened. That is what lets a
+  // list of fifty finished auctions each carry one of these without the page
+  // costing fifty requests to render.
+  const primed = useRef(false);
+
   useEffect(() => {
-    if (!open || !overview.published) return;
-    setScope(defaultScope);
-    setQuery('');
-    setSearching(false);
-    load(defaultScope, null);
-  }, [open, overview.published, defaultScope, load]);
+    if (!open) {
+      primed.current = false;
+      return;
+    }
+    if (primed.current) return;
+    primed.current = true;
+
+    let cancelled = false;
+
+    (async () => {
+      let summary = given ?? fetched;
+
+      if (!summary) {
+        setLoading(true);
+        try {
+          const res = await fetch(`/api/miniapp/auctions/${auctionCode}/ledger?mode=overview`);
+          const data = await res.json();
+          if (cancelled) return;
+          if (!res.ok) throw new Error(data?.error || 'failed');
+          summary = data as LedgerOverview;
+          setFetched(summary);
+        } catch {
+          if (!cancelled) {
+            setFailed(true);
+            setLoading(false);
+          }
+          return;
+        }
+      }
+
+      if (cancelled) return;
+      if (!summary.published) {
+        setLoading(false);
+        return;
+      }
+
+      const next: LedgerScope = summary.winningAmount === null ? 'all' : 'proof';
+      setScope(next);
+      setQuery('');
+      setSearching(false);
+      load(next, null);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // `fetched` is deliberately absent: writing it must not re-run this and
+    // fetch the first page a second time. `primed` guards the single pass.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, auctionCode, given, load]);
 
   function changeScope(next: LedgerScope) {
     setScope(next);
@@ -153,7 +208,7 @@ export function BidLedgerSheet({
   }
 
   const scopes: { value: LedgerScope; label: string }[] = [
-    ...(overview.winningAmount !== null
+    ...(overview && overview.winningAmount !== null
       ? [{ value: 'proof' as const, label: t('ledger.whyWon') }]
       : []),
     { value: 'all', label: t('ledger.allAmounts') },
@@ -197,7 +252,18 @@ export function BidLedgerSheet({
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4"
             style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 1rem)' }}
           >
-            {!overview.published ? (
+            {!overview ? (
+              <p className="flex items-center justify-center gap-2 py-10 text-xs text-muted-foreground">
+                {failed ? (
+                  t('common.error')
+                ) : (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    {t('common.loading')}
+                  </>
+                )}
+              </p>
+            ) : !overview.published ? (
               <p className="gl-panel px-4 py-8 text-center text-xs text-muted-foreground">
                 {t('ledger.notPublished')}
               </p>
@@ -406,7 +472,9 @@ function Summary({
         </div>
       )}
 
-      {overview.histogram.length > 1 && (
+      {/* Below a handful of amounts the strip is a couple of fat blocks that
+          say less than the table under it, so it stays out of the way. */}
+      {overview.histogram.length >= 8 && (
         <Strip bars={overview.histogram} currency={currency} overview={overview} />
       )}
 

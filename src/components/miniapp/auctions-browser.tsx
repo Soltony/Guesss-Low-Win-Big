@@ -19,6 +19,9 @@ const STATUS_TABS = [
   { value: 'LIVE', label: 'Live' },
   { value: 'ENDING_SOON', label: 'Ending soon' },
   { value: 'ENDED', label: 'Finished' },
+  // Sits next to Finished rather than replacing it: Finished is every auction
+  // that is over, Winners is only the ones that awarded something.
+  { value: 'WINNERS', label: 'Winners' },
   { value: 'ALL', label: 'All' },
 ] as const;
 

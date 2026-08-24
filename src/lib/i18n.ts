@@ -33,6 +33,7 @@ const dictionary = {
     en: "Don't miss out! These auctions are ending soon. Place your bid now!",
     am: 'እድሉን አያምልጥዎት! እነዚህ ጨረታዎች በቅርቡ ያልቃሉ። አሁን ይጫረቱ!',
   },
+  'home.allWinners': { en: 'All winners', am: 'ሁሉም አሸናፊዎች' },
   'home.howItWorks': { en: 'How It Works', am: 'እንዴት እንደሚሰራ' },
   'home.description': {
     en: 'GUESSLOW is a Lowest Unique Bid Auction where the participant who submits the lowest unique bid wins. For instance, if ETB 1.00 is submitted twice, ETB 2.00 once, ETB 3.00 twice, and ETB 4.00 once, the lowest unique bid is ETB 2.00, so it wins. However, it is important to note that the lowest bid does not always win; only the lowest and unique bid wins. Bidders can submit different amounts up to 100 times for a single auction. Win premium items at a fraction of their actual price.',
@@ -93,6 +94,7 @@ const dictionary = {
   'ledger.unique': { en: 'Stood alone', am: 'ብቻውን ቆሟል' },
   'ledger.winnerRow': { en: 'Winning bid', am: 'አሸናፊ ጨረታ' },
   'ledger.yourBid': { en: 'Your bid', am: 'የእርስዎ ጨረታ' },
+  'ledger.youWon': { en: 'You', am: 'እርስዎ' },
   'ledger.bidsAt': { en: '{count} bids', am: '{count} ጨረታዎች' },
   'ledger.oneBid': { en: '1 bid', am: '1 ጨረታ' },
   'ledger.seeAll': { en: '+{count} more', am: '+{count} ተጨማሪ' },

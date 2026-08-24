@@ -47,6 +47,18 @@ export interface PublicAuction {
   parentCode: string | null;
   /** Open only to an invited list of phone numbers. */
   restricted: boolean;
+  /**
+   * Who took it and for how much. Present only once the auction has SETTLED,
+   * so every list that renders a card can show the result without a second
+   * query — and a card for a running auction cannot leak one by construction.
+   */
+  result: { winnerName: string | null; amount: number } | null;
+  /**
+   * The bid ledger is worth offering on this card. Derived rather than counted:
+   * a settled auction that took bids has one, and the sheet reports honestly if
+   * publication failed, so this stays free of a per-card query.
+   */
+  ledgerPublished: boolean;
 }
 
 const PUBLIC_STATUSES: AuctionStatus[] = ['SCHEDULED', 'LIVE', 'ENDED', 'SETTLED'];
@@ -93,6 +105,21 @@ function mapAuction(
     reauctionAllowPreviousBidders: auction.reauctionAllowPreviousBidders,
     parentCode: auction.parentAuction?.code ?? null,
     restricted: auction.eligibilityMode === 'RESTRICTED',
+    result:
+      auction.status === 'SETTLED' && auction.winner
+        ? {
+            winnerName:
+              auction.winner.bidder?.fullName ??
+              (settings['winners.publishWinnerPhone']
+                ? maskPhoneLocal(auction.winner.bidder?.phoneNumber ?? '')
+                : null),
+            amount: toNum(auction.winner.amount),
+          }
+        : null,
+    ledgerPublished:
+      auction.status === 'SETTLED' &&
+      auction.bidCount > 0 &&
+      Boolean(settings['reveal.publishLedger']),
   };
 }
 
@@ -100,12 +127,23 @@ const auctionInclude = {
   item: { select: { images: true, description: true, retailPrice: true } },
   category: { select: { name: true } },
   parentAuction: { select: { code: true } },
+  // A one-to-one join on a unique key, so every list can show its results
+  // without a second pass. `mapAuction` reads it only for SETTLED auctions.
+  winner: {
+    select: { amount: true, bidder: { select: { fullName: true, phoneNumber: true } } },
+  },
 } as const;
 
 export interface BrowseOptions {
   categoryId?: string;
   search?: string;
-  status?: 'LIVE' | 'ENDING_SOON' | 'ENDED' | 'ALL';
+  /**
+   * WINNERS is narrower than ENDED on purpose: ENDED is "auctions that are
+   * over", which includes rounds still awaiting settlement and rounds that
+   * closed with every amount matched. WINNERS is only the ones that actually
+   * awarded something, which is what a reader asking to see the winners means.
+   */
+  status?: 'LIVE' | 'ENDING_SOON' | 'ENDED' | 'WINNERS' | 'ALL';
   take?: number;
   skip?: number;
 }
@@ -137,12 +175,23 @@ export async function browseAuctions(options: BrowseOptions = {}) {
     where.status = 'LIVE';
     where.endAt = { lte: new Date(Date.now() + endingSoonHours * 60 * 60 * 1000) };
   }
+  if (statusFilter === 'WINNERS') {
+    where.status = 'SETTLED';
+    where.winner = { isNot: null };
+  }
+
+  // A winners list is a history, so it reads newest-first and ignores the
+  // merchandising order the live grid is arranged by.
+  const orderBy =
+    statusFilter === 'WINNERS'
+      ? [{ settledAt: 'desc' as const }]
+      : [{ featured: 'desc' as const }, { displayOrder: 'asc' as const }, { endAt: 'asc' as const }];
 
   const [rows, total] = await Promise.all([
     prisma.auction.findMany({
       where,
       include: auctionInclude,
-      orderBy: [{ featured: 'desc' }, { displayOrder: 'asc' }, { endAt: 'asc' }],
+      orderBy,
       take,
       skip: options.skip ?? 0,
     }),

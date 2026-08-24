@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getBidderSession } from '@/lib/session';
 import { handle, jsonError } from '@/lib/api';
-import { getLedgerRows, type LedgerScope } from '@/lib/bid-ledger';
+import { getLedgerOverview, getLedgerRows, type LedgerScope } from '@/lib/bid-ledger';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,12 +30,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ code
 
     const auction = await prisma.auction.findUnique({
       where: { code },
-      select: { id: true, status: true },
+      select: { id: true, status: true, currency: true },
     });
     if (!auction) return jsonError('Auction not found', 404);
 
     const session = await getBidderSession();
     const url = new URL(req.url);
+
+    // Lists render the sheet from a card, where paying for an overview per
+    // auction would be absurd — so the summary is fetched here, once, when a
+    // reader actually opens one. The detail page still passes its own in.
+    if (url.searchParams.get('mode') === 'overview') {
+      return getLedgerOverview(auction);
+    }
 
     const requested = url.searchParams.get('scope');
     const scope = SCOPES.includes(requested as LedgerScope) ? (requested as LedgerScope) : 'all';
