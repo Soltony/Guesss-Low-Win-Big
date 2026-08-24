@@ -79,6 +79,46 @@ const dictionary = {
     am: 'ይህ ጨረታ ቀደም ብለው በከፈሉት ተሸፍኗል — አዲስ ክፍያ አይጠየቅም።',
   },
 
+  'ledger.open': { en: 'See how this was decided', am: 'ውሳኔው እንዴት እንደተሰጠ ይመልከቱ' },
+  'ledger.title': { en: 'Bid history', am: 'የጨረታ ታሪክ' },
+  'ledger.totalBids': { en: 'Total bids', am: 'ጠቅላላ ጨረታዎች' },
+  'ledger.cancelled': { en: 'Cancelled out', am: 'የተሰረዙ' },
+  'ledger.stoodAlone': { en: 'Stood alone', am: 'ብቻቸውን የቆሙ' },
+  'ledger.amounts': { en: 'Amounts bid', am: 'የተጫረቱ መጠኖች' },
+  'ledger.whyWon': { en: 'Why it won', am: 'ለምን እንዳሸነፈ' },
+  'ledger.allAmounts': { en: 'All amounts', am: 'ሁሉም መጠኖች' },
+  'ledger.myAmounts': { en: 'My amounts', am: 'የእኔ መጠኖች' },
+  'ledger.checkAmount': { en: 'Check an amount', am: 'መጠን ይፈትሹ' },
+  'ledger.taken': { en: 'Taken', am: 'ተይዟል' },
+  'ledger.unique': { en: 'Stood alone', am: 'ብቻውን ቆሟል' },
+  'ledger.winnerRow': { en: 'Winning bid', am: 'አሸናፊ ጨረታ' },
+  'ledger.yourBid': { en: 'Your bid', am: 'የእርስዎ ጨረታ' },
+  'ledger.bidsAt': { en: '{count} bids', am: '{count} ጨረታዎች' },
+  'ledger.oneBid': { en: '1 bid', am: '1 ጨረታ' },
+  'ledger.seeAll': { en: '+{count} more', am: '+{count} ተጨማሪ' },
+  'ledger.loadMore': { en: 'Load more amounts', am: 'ተጨማሪ መጠኖች ይጫኑ' },
+  'ledger.noMatch': { en: 'Nobody bid that amount.', am: 'ማንም ያንን መጠን አልተጫረተም።' },
+  'ledger.notPublished': {
+    en: 'The bid history for this auction has not been published.',
+    am: 'የዚህ ጨረታ ታሪክ እስካሁን አልታተመም።',
+  },
+  'ledger.proof': {
+    en: 'Every one of the {matched} amounts below {winning} was bid by more than one person, so they all cancelled out. {winning} was bid exactly once.',
+    am: 'ከ{winning} በታች ካሉት {matched} መጠኖች እያንዳንዱ ከአንድ በላይ ሰው ተጫርቶበታል፣ ስለዚህ ሁሉም ተሰርዘዋል። {winning} በትክክል አንድ ጊዜ ብቻ ተጫርቷል።',
+  },
+  'ledger.proofLowest': {
+    en: '{winning} was the lowest amount anyone bid, and exactly one person bid it — so it won outright.',
+    am: '{winning} ማንም ከተጫረተባቸው ሁሉ ዝቅተኛው መጠን ነበር፣ እናም በትክክል አንድ ሰው ብቻ ተጫረተበት — ስለዚህ በቀጥታ አሸነፈ።',
+  },
+  'ledger.proofNoWinner': {
+    en: 'Every amount bid on this auction was chosen by more than one person, so nothing stood alone and there is no winner.',
+    am: 'በዚህ ጨረታ የተጫረተ እያንዳንዱ መጠን ከአንድ በላይ ሰው መርጦታል፣ ስለዚህ ብቻውን የቆመ የለም እና አሸናፊ የለም።',
+  },
+  'ledger.explainer': {
+    en: 'Bids are sealed while an auction runs and opened together when it closes. This is the full record of what everyone bid.',
+    am: 'ጨረታዎች ጨረታው በሚካሄድበት ጊዜ ታሽገው ይቆያሉ፤ ሲዘጋም በአንድ ላይ ይከፈታሉ። ይህ ሁሉም ሰው የተጫረተበት ሙሉ መዝገብ ነው።',
+  },
+
   'terms.title': { en: 'Terms and Conditions', am: 'የአጠቃቀም ውሎች' },
   'terms.confirmTitle': { en: 'Confirm your bid', am: 'ጨረታዎን ያረጋግጡ' },
   'terms.confirmIntro': {

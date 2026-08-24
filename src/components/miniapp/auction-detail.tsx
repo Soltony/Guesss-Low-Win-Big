@@ -11,6 +11,7 @@ import {
   Lock,
   Package,
   RefreshCw,
+  ScrollText,
   Trophy,
   XCircle,
 } from 'lucide-react';
@@ -19,9 +20,11 @@ import { MASKED_AMOUNT, compactNumber } from '@/lib/format';
 import { splitCarriedBids } from '@/lib/reauction-rules';
 import { Countdown } from './countdown';
 import { BidSheet } from './bid-sheet';
+import { BidLedgerSheet } from './bid-ledger-sheet';
 import { FavoriteButton } from './favorite-button';
 import { useLanguage } from './language-provider';
 import type { PublicAuction } from '@/lib/miniapp-data';
+import type { LedgerOverview } from '@/lib/bid-ledger';
 
 interface MyBid {
   id: string;
@@ -60,6 +63,7 @@ export function AuctionDetail({
   myBids,
   favorited,
   revealAllowed,
+  ledger,
   carriedBids = 0,
   blockedReason = null,
 }: {
@@ -68,6 +72,8 @@ export function AuctionDetail({
   myBids: MyBid[];
   favorited: boolean;
   revealAllowed: boolean;
+  /** The published bid ledger's headline numbers; unpublished until settlement. */
+  ledger: LedgerOverview;
   /** Bids paid for in an earlier round that carry into this one. */
   carriedBids?: number;
   /** Set when the re-auction rules exclude this bidder from the round. */
@@ -76,6 +82,7 @@ export function AuctionDetail({
   const { t, lang } = useLanguage();
   const [activeImage, setActiveImage] = useState(0);
   const [bidding, setBidding] = useState(false);
+  const [ledgerOpen, setLedgerOpen] = useState(false);
   const currency = auction.currency === 'ETB' ? 'Br' : auction.currency;
   const isLive = auction.status === 'LIVE';
   const remaining = Math.max(0, auction.maxBidsPerUser - myBids.length);
@@ -320,6 +327,27 @@ export function AuctionDetail({
                   </div>
                 </div>
               )}
+
+              {/* The result is only worth as much as the record behind it, so
+                  the way into that record sits on the result itself rather
+                  than somewhere further down the page. */}
+              {ledger.published && (
+                <button
+                  type="button"
+                  onClick={() => setLedgerOpen(true)}
+                  aria-haspopup="dialog"
+                  aria-expanded={ledgerOpen}
+                  className="flex w-full items-center justify-between gap-2 border-t border-border px-4 py-3 text-left text-xs font-bold transition-colors hover:bg-secondary"
+                >
+                  <span className="flex items-center gap-2">
+                    <ScrollText className="h-4 w-4 text-primary" />
+                    {t('ledger.open')}
+                  </span>
+                  <span className="font-medium tabular-nums text-muted-foreground">
+                    {compactNumber(ledger.totalBids)} {t('auction.bids')}
+                  </span>
+                </button>
+              )}
             </div>
           ) : (
             <Link
@@ -501,6 +529,18 @@ export function AuctionDetail({
             blockedReason={blockedReason}
           />
         </>
+      )}
+
+      {ledger.published && (
+        <BidLedgerSheet
+          auctionCode={auction.code}
+          currency={currency}
+          overview={ledger}
+          winnerName={auction.winner?.displayName ?? null}
+          connected={connected}
+          open={ledgerOpen}
+          onOpenChange={setLedgerOpen}
+        />
       )}
     </div>
   );

@@ -13,6 +13,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "bids:encrypt": "tsx scripts/encrypt-bid-amounts.ts",
     "bids:drop-plaintext": "tsx scripts/drop-plaintext-bid-amounts.ts",
+    "bids:backfill-ledger": "tsx scripts/backfill-bid-ledger.ts",
     "run:worker": "tsx -r tsconfig-paths/register src/worker.ts",
     "postinstall": "prisma generate"
   },

@@ -285,6 +285,25 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     type: 'boolean',
     default: true,
   },
+  {
+    key: 'reveal.publishLedger',
+    label: 'Publish the bid ledger',
+    description:
+      'After an auction settles, show every amount that was bid and how many bids landed on it, so anyone can check that the cheaper amounts were all matched and the winning one was not.',
+    category: 'reveal',
+    type: 'boolean',
+    default: true,
+  },
+  {
+    key: 'reveal.ledgerShowBidders',
+    label: 'Name the bidders in the ledger',
+    description:
+      'List the masked phone numbers behind each amount. The counts alone already prove the result, and a masked number is the same across every auction a bidder takes part in, so turn this off if bidders should not be traceable between rounds.',
+    category: 'reveal',
+    type: 'boolean',
+    default: true,
+    sensitive: true,
+  },
 
   // ---- Winners ----
   {

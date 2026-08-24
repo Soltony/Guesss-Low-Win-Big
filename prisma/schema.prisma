@@ -290,6 +290,7 @@ model Auction {
 
   bids         Bid[]
   results      AuctionResult[]
+  ledger       AuctionLedgerEntry[]
   winner       Winner?
   payments     PaymentTransaction[]
   favorites    BidderFavorite[]
@@ -483,6 +484,25 @@ model AuctionResult {
 
   @@unique([auctionId, rank])
   @@index([bidderId])
+}
+
+
+model AuctionLedgerEntry {
+  id        String  @id @default(cuid())
+  auctionId String
+  auction   Auction @relation(fields: [auctionId], references: [id], onDelete: Cascade)
+
+  amount   Decimal @db.Decimal(18, 2)
+  bidCount Int
+  isUnique Boolean
+
+  uniqueRank Int?
+  
+  bidderIds String @db.NVarChar(Max)
+
+  createdAt DateTime @default(now())
+
+  @@unique([auctionId, amount])
 }
 
 model Winner {

@@ -3,6 +3,7 @@ import { getSetting, getSettings } from './settings';
 import { createAuditLog } from './audit-log';
 import { toNum } from './format';
 import { createReauction, decideReauction, isWinnerValid, releaseBidCredit } from './reauction';
+import { buildBidLedger, groupByAmount, publishBidLedger } from './bid-ledger';
 import { decryptBidAmount } from './bid-crypto';
 import type { AuctionStatus, ReauctionState, SettlementActor } from './types';
 
@@ -28,14 +29,10 @@ export interface RankedBid {
 export function rankUniqueBids(
   bids: { id: string; bidderId: string; amount: number; createdAt: Date }[]
 ): RankedBid[] {
-  const byAmount = new Map<string, typeof bids>();
-  for (const bid of bids) {
-    // Key on the fixed 2-decimal string so 2 and 2.00 are the same amount.
-    const key = bid.amount.toFixed(2);
-    const list = byAmount.get(key);
-    if (list) list.push(bid);
-    else byAmount.set(key, [bid]);
-  }
+  // Keyed on the fixed 2-decimal string so 2 and 2.00 are the same amount. The
+  // published ledger buckets the same way, which is what keeps the table the
+  // bidder reads and the ranking that decided the winner in step.
+  const byAmount = groupByAmount(bids);
 
   const unique: typeof bids = [];
   for (const list of byAmount.values()) {
@@ -273,9 +270,18 @@ export async function settleAuction(
   const keep = runnerUpDepth > 0 ? rankings.slice(0, runnerUpDepth + 1) : rankings.slice(0, 1);
   const uniqueBidIds = new Set(rankings.map((r) => r.bidId));
 
+  // The whole bid space, grouped by amount, for publication once this settles.
+  // Built from the full ranking rather than `keep` so every unmatched amount
+  // carries its own position, not just the runner-ups that were retained.
+  const ledger = buildBidLedger(opened, rankings);
+
   await prisma.$transaction(async (tx) => {
     // Re-settling replaces the previous snapshot entirely.
     await tx.auctionResult.deleteMany({ where: { auctionId } });
+    // The published ledger goes with it. Clearing it here rather than at
+    // publication time means a re-settle that fails halfway leaves the sheet
+    // saying "not published yet" instead of showing the superseded result.
+    await tx.auctionLedgerEntry.deleteMany({ where: { auctionId } });
     if (options.force) {
       const previous = await tx.winner.findUnique({ where: { auctionId } });
       if (previous) {
@@ -359,6 +365,18 @@ export async function settleAuction(
     });
   });
 
+  // Publishing the ledger is deliberately outside the transaction: a wide bid
+  // space is thousands of rows, and the result must not hinge on how long they
+  // take to write. A failure leaves the auction settled with nothing published,
+  // which the sheet reports honestly and a re-settle repairs.
+  let ledgerPublished = false;
+  try {
+    await publishBidLedger(auctionId, ledger);
+    ledgerPublished = true;
+  } catch (error) {
+    console.error('[auction-engine] bid ledger not published', auctionId, error);
+  }
+
   await createAuditLog({
     actorId: actor.id,
     actorName: actor.name,
@@ -377,6 +395,10 @@ export async function settleAuction(
       winnerBidId: winner?.bidId ?? null,
       winningAmount: winner?.amount ?? null,
       topRanks: keep.slice(0, 5).map((r) => ({ rank: r.rank, bidId: r.bidId })),
+      // How many distinct amounts the ledger holds, not what they were — the
+      // ledger itself is the record, this is only whether it got written.
+      ledgerAmounts: ledger.length,
+      ledgerPublished,
       reauctionState: lineageSettled ? 'CREATED' : decision.state,
       reauctionReason: lineageSettled ? undefined : decision.reason,
     },
