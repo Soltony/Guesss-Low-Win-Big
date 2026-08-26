@@ -11,6 +11,7 @@
     "test": "vitest run",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:demo": "tsx prisma/seed-demo.ts",
     "bids:encrypt": "tsx scripts/encrypt-bid-amounts.ts",
     "bids:drop-plaintext": "tsx scripts/drop-plaintext-bid-amounts.ts",
     "bids:backfill-ledger": "tsx scripts/backfill-bid-ledger.ts",

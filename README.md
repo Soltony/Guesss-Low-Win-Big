@@ -65,6 +65,31 @@ The seed prints the bootstrap Super Admin credentials. Defaults are
 
 Set `SEED_DEMO=false` to skip the demo auctions.
 
+### The demo dataset
+
+`prisma/seed.ts` is the bootstrap seed: roles, settings, templates and a
+starter catalogue. For a database with something to actually look at, run the
+demo dataset on top of it:
+
+```bash
+npm run db:seed:demo              # ~28 auctions, ~3,900 bids
+npm run db:seed:demo -- --reset   # rebuild it from scratch
+npm run db:seed:demo -- --reset-only
+```
+
+It covers one auction per configuration — every status, both eligibility
+modes, fee-bearing and free, capped and uncapped, penny and whole-unit grids,
+auto-extending, invite-only, and three-round re-auction chains with bids
+carried forward — and fills them with bids in every status, payments in every
+status, and winners in every claim state. Results, ledgers and re-auction
+rounds are produced by calling the real settlement engine rather than written
+by hand, so the data is what the platform would have produced from those bids.
+
+Everything it writes is namespaced (`GL-*` auction codes, `251970*` bidder
+phones, `GL-DEMO-*` item SKUs), which is what `--reset` keys off, so it never
+touches data that came from anywhere else. Needs `BID_ENCRYPTION_KEY`, since
+every bid amount is sealed exactly as the mini-app seals it.
+
 | Surface | URL |
 | --- | --- |
 | Mini-app | `/` |
@@ -78,6 +103,7 @@ npm run typecheck     # tsc --noEmit
 npm run build         # prisma generate && next build
 npm run db:push       # sync schema without migrations
 npm run db:seed       # idempotent seed
+npm run db:seed:demo  # demo auctions, bidders and ~3,900 bids
 ```
 
 ---
