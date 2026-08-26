@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { ArrowRight, Crown, Flame, Lock, Package, ScrollText, Users } from 'lucide-react';
+import { ArrowRight, Crown, Eye, Flame, Lock, Package, ScrollText, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { compactNumber } from '@/lib/format';
 import { Countdown } from './countdown';
@@ -105,9 +105,17 @@ export function AuctionCard({
                 </span>
               )}
             </div>
-            <span className="rounded-full bg-white/95 p-1.5 shadow-sm">
-              <FavoriteButton auctionId={auction.id} initial={favorited} />
-            </span>
+            <div className="flex items-center gap-1.5">
+              {auction.viewCount !== null && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-foreground/80 px-2.5 py-1 text-[11px] font-semibold text-background backdrop-blur">
+                  <Eye className="h-3 w-3" />
+                  {compactNumber(auction.viewCount)}
+                </span>
+              )}
+              <span className="rounded-full bg-white/95 p-1.5 shadow-sm">
+                <FavoriteButton auctionId={auction.id} initial={favorited} />
+              </span>
+            </div>
           </div>
         </div>
       </Link>

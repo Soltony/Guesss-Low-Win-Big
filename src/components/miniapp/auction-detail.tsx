@@ -209,16 +209,6 @@ export function AuctionDetail({
               <p className="mt-1.5 text-sm text-white/65">{auction.subtitle}</p>
             )}
 
-            {auction.retailPrice > 0 && (
-              <p className="mt-3 flex items-baseline gap-2 text-sm">
-                <span className="text-white/55">{t('auction.retailPrice')}</span>
-                <span className="gl-was font-semibold text-white/80">
-                  {auction.retailPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}{' '}
-                  {currency}
-                </span>
-              </p>
-            )}
-
             {isLive && (
               <div className="mt-4">
                 <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-white/50">
