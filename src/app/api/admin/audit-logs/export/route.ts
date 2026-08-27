@@ -10,7 +10,7 @@ const MAX_ROWS = 20_000;
 function csvCell(value: unknown): string {
   const text = value === null || value === undefined ? '' : String(value);
   // Prefix formula-leading characters so spreadsheets treat them as text.
-  const guarded = /^[=+\-@]/.test(text) ? `'${text}` : text;
+  const guarded = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
   return `"${guarded.replace(/"/g, '""')}"`;
 }
 

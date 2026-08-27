@@ -52,12 +52,70 @@ function isUnder(path: string, prefixes: string[]) {
   return prefixes.some((p) => path === p || path.startsWith(p + '/'));
 }
 
+/**
+ * Every `Set-Cookie` on a response, as separate strings.
+ *
+ * `getSetCookie()` is the only header accessor that does not fold repeats into
+ * one comma-joined value — which would corrupt a cookie carrying an `Expires`
+ * date. The fallback covers a runtime that predates it, where a single cookie
+ * is still readable and is all this path ever produces.
+ */
+function readSetCookies(headers: Headers): string[] {
+  if (typeof headers.getSetCookie === 'function') return headers.getSetCookie();
+  const single = headers.get('set-cookie');
+  return single ? [single] : [];
+}
+
+/**
+ * Rewrites the forwarded `Cookie` header so this request carries the renewed
+ * tokens rather than the expired ones the browser sent.
+ *
+ * Only the name and value are taken; the attributes are instructions to the
+ * browser and mean nothing on the way in. A cookie the request did not already
+ * have is appended, so nothing else it was carrying is disturbed.
+ */
+function applyRenewedCookies(headers: Headers, setCookies: string[]) {
+  if (setCookies.length === 0) return;
+
+  const jar = new Map<string, string>();
+  for (const pair of (headers.get('cookie') || '').split(';')) {
+    const separator = pair.indexOf('=');
+    if (separator < 1) continue;
+    jar.set(pair.slice(0, separator).trim(), pair.slice(separator + 1).trim());
+  }
+
+  for (const cookie of setCookies) {
+    const [assignment] = cookie.split(';');
+    const separator = assignment.indexOf('=');
+    if (separator < 1) continue;
+    const name = assignment.slice(0, separator).trim();
+    const value = assignment.slice(separator + 1).trim();
+    // An empty value is a deletion, which the request should reflect as one.
+    if (value) jar.set(name, value);
+    else jar.delete(name);
+  }
+
+  const rebuilt = [...jar].map(([name, value]) => `${name}=${value}`).join('; ');
+  if (rebuilt) headers.set('cookie', rebuilt);
+  else headers.delete('cookie');
+}
+
 export default async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
   const nonce = btoa(crypto.randomUUID());
   const csp = buildCsp({ nonce, allowEval: process.env.NODE_ENV !== 'production' });
 
+  /**
+   * A renewed access cookie handed back by the session endpoint, if it issued
+   * one on this pass. Held here so `finish` can attach it to whatever response
+   * is finally returned — the browser has to receive it, or the next request
+   * arrives with the same expired token and renews all over again.
+   */
+  let renewedCookies: string[] = [];
+
   const finish = (res: NextResponse) => {
+    for (const cookie of renewedCookies) res.headers.append('Set-Cookie', cookie);
+
     applySecurityHeaders(res.headers, csp, nonce);
 
     // Per-session data must not survive in a shared cache or in the browser's
@@ -163,9 +221,18 @@ export default async function middleware(req: NextRequest) {
       },
       cache: 'no-store',
     });
-    if (response.ok) session = await response.json();
+    if (response.ok) {
+      session = await response.json();
+      // Protected routes require a valid access token, and only that endpoint
+      // may mint one from the refresh cookie. When it has, the new cookie is
+      // carried in two directions: onward to the browser by `finish`, and back
+      // into this request so the handler behind it sees the fresh token rather
+      // than the expired one the browser sent.
+      renewedCookies = readSetCookies(response.headers);
+      applyRenewedCookies(requestHeaders, renewedCookies);
+    }
   } catch (error) {
-    console.error('[middleware] session check failed', error);
+    console.error('[proxy] session check failed', error);
     return deny(401, '/admin/login');
   }
 

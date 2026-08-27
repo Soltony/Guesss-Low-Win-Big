@@ -4,6 +4,12 @@ import { isGuardFailure, jsonError, readJsonBody, requirePermission } from '@/li
 import { createAuditLog } from '@/lib/audit-log';
 import { isAdFrequency, parseAdSchedule, parseAdTimings } from '@/lib/ads';
 import { CONTENT_KIND_MODULES } from '@/lib/route-permissions';
+import {
+  UNSAFE_IMAGE_MESSAGE,
+  UNSAFE_LINK_MESSAGE,
+  safeImageUrl,
+  safeLinkUrl,
+} from '@/lib/safe-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,11 +43,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.imageUrl !== undefined) {
       const imageUrl = String(body.imageUrl).trim();
       if (!imageUrl) return jsonError('Banner image URL cannot be empty.', 400);
-      data.imageUrl = imageUrl;
+      // An edit is the other way an unsafe scheme reaches the database, so it
+      // goes through the same check as a create. See `lib/safe-url.ts`.
+      const safeImage = safeImageUrl(imageUrl);
+      if (!safeImage) return jsonError(UNSAFE_IMAGE_MESSAGE, 400);
+      data.imageUrl = safeImage;
     }
     // Cleared back to null rather than '' so "decorative" is one value, not two.
     if (body.imageAlt !== undefined) data.imageAlt = String(body.imageAlt).trim() || null;
-    if (body.linkUrl !== undefined) data.linkUrl = String(body.linkUrl) || null;
+    if (body.linkUrl !== undefined) {
+      const linkUrl = String(body.linkUrl).trim();
+      const safeLink = linkUrl ? safeLinkUrl(linkUrl) : null;
+      if (linkUrl && !safeLink) return jsonError(UNSAFE_LINK_MESSAGE, 400);
+      data.linkUrl = safeLink;
+    }
     if (body.displayOrder !== undefined) {
       data.displayOrder = Math.trunc(Number(body.displayOrder) || 0);
     }
@@ -80,11 +95,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.titleAm !== undefined) data.titleAm = String(body.titleAm) || null;
     if (body.body !== undefined) data.body = String(body.body).trim() || null;
     if (body.bodyAm !== undefined) data.bodyAm = String(body.bodyAm) || null;
-    if (body.imageUrl !== undefined) data.imageUrl = String(body.imageUrl).trim() || null;
+    if (body.imageUrl !== undefined) {
+      const imageUrl = String(body.imageUrl).trim();
+      const safeImage = imageUrl ? safeImageUrl(imageUrl) : null;
+      if (imageUrl && !safeImage) return jsonError(UNSAFE_IMAGE_MESSAGE, 400);
+      data.imageUrl = safeImage;
+    }
     if (body.imageAlt !== undefined) data.imageAlt = String(body.imageAlt).trim() || null;
     if (body.ctaLabel !== undefined) data.ctaLabel = String(body.ctaLabel) || null;
     if (body.ctaLabelAm !== undefined) data.ctaLabelAm = String(body.ctaLabelAm) || null;
-    if (body.linkUrl !== undefined) data.linkUrl = String(body.linkUrl).trim() || null;
+    if (body.linkUrl !== undefined) {
+      const linkUrl = String(body.linkUrl).trim();
+      const safeLink = linkUrl ? safeLinkUrl(linkUrl) : null;
+      if (linkUrl && !safeLink) return jsonError(UNSAFE_LINK_MESSAGE, 400);
+      data.linkUrl = safeLink;
+    }
     if (body.frequency !== undefined) {
       if (!isAdFrequency(body.frequency)) return jsonError('Unsupported ad frequency.', 400);
       data.frequency = body.frequency;

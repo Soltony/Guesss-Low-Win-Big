@@ -6,7 +6,7 @@ import { getCurrentUser } from '@/lib/session';
 import { hasModuleAccess } from '@/lib/permissions';
 import { jsonError } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
-import { ALLOWED_IMAGE_TYPES, uploadsDir } from '@/lib/uploads';
+import { ALLOWED_IMAGE_TYPES, sniffImageType, uploadsDir } from '@/lib/uploads';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -19,29 +19,6 @@ const ALLOWED = ALLOWED_IMAGE_TYPES;
 
 /** Modules whose editors are allowed to upload artwork. */
 const UPLOAD_MODULES = ['items', 'categories', 'content'] as const;
-
-/** Magic-number check, so a renamed file cannot slip past the declared type. */
-function sniff(bytes: Uint8Array): string | null {
-  const startsWith = (...sig: number[]) => sig.every((b, i) => bytes[i] === b);
-
-  if (startsWith(0x89, 0x50, 0x4e, 0x47)) return 'image/png';
-  if (startsWith(0xff, 0xd8, 0xff)) return 'image/jpeg';
-  if (startsWith(0x47, 0x49, 0x46, 0x38)) return 'image/gif';
-  if (
-    startsWith(0x52, 0x49, 0x46, 0x46) &&
-    bytes[8] === 0x57 &&
-    bytes[9] === 0x45 &&
-    bytes[10] === 0x42 &&
-    bytes[11] === 0x50
-  ) {
-    return 'image/webp';
-  }
-  // AVIF/HEIF: 'ftyp' box at offset 4.
-  if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
-    return 'image/avif';
-  }
-  return null;
-}
 
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser({ allowRefresh: false });
@@ -73,7 +50,7 @@ export async function POST(req: NextRequest) {
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const detected = sniff(bytes);
+  const detected = sniffImageType(bytes);
 
   if (!detected || !ALLOWED[detected]) {
     return jsonError('Only PNG, JPEG, WebP, GIF and AVIF images are accepted.', 415);

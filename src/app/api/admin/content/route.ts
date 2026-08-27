@@ -4,6 +4,12 @@ import { isGuardFailure, jsonError, readJsonBody, requirePermission } from '@/li
 import { createAuditLog } from '@/lib/audit-log';
 import { isAdFrequency, parseAdSchedule, parseAdTimings } from '@/lib/ads';
 import { CONTENT_KIND_MODULES } from '@/lib/route-permissions';
+import {
+  UNSAFE_IMAGE_MESSAGE,
+  UNSAFE_LINK_MESSAGE,
+  safeImageUrl,
+  safeLinkUrl,
+} from '@/lib/safe-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,14 +36,22 @@ export async function POST(req: NextRequest) {
     if (!title) return jsonError('Banner title is required.', 400);
     if (!imageUrl) return jsonError('Banner image URL is required.', 400);
 
+    // Scheme first: both of these end up in the mini-app markup, one of them as
+    // an `href` a bidder taps. See `lib/safe-url.ts`.
+    const safeImage = safeImageUrl(imageUrl);
+    if (!safeImage) return jsonError(UNSAFE_IMAGE_MESSAGE, 400);
+
+    const safeLink = body.linkUrl ? safeLinkUrl(body.linkUrl) : null;
+    if (body.linkUrl && !safeLink) return jsonError(UNSAFE_LINK_MESSAGE, 400);
+
     const banner = await prisma.banner.create({
       data: {
         title,
         titleAm: body.titleAm ? String(body.titleAm) : undefined,
         subtitle: body.subtitle ? String(body.subtitle) : undefined,
-        imageUrl,
+        imageUrl: safeImage,
         imageAlt: body.imageAlt ? String(body.imageAlt).trim() : undefined,
-        linkUrl: body.linkUrl ? String(body.linkUrl) : undefined,
+        linkUrl: safeLink ?? undefined,
         displayOrder: Math.trunc(Number(body.displayOrder) || 0),
         status: body.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
         startAt: body.startAt ? new Date(body.startAt) : undefined,
@@ -67,6 +81,12 @@ export async function POST(req: NextRequest) {
       return jsonError('An ad needs an image, a message, or both.', 400);
     }
 
+    const safeImage = imageUrl ? safeImageUrl(imageUrl) : null;
+    if (imageUrl && !safeImage) return jsonError(UNSAFE_IMAGE_MESSAGE, 400);
+
+    const safeLink = body.linkUrl ? safeLinkUrl(body.linkUrl) : null;
+    if (body.linkUrl && !safeLink) return jsonError(UNSAFE_LINK_MESSAGE, 400);
+
     const schedule = parseAdSchedule(body);
     if ('error' in schedule) return jsonError(schedule.error, 400);
 
@@ -81,11 +101,11 @@ export async function POST(req: NextRequest) {
         titleAm: body.titleAm ? String(body.titleAm) : undefined,
         body: bodyText || undefined,
         bodyAm: body.bodyAm ? String(body.bodyAm) : undefined,
-        imageUrl: imageUrl || undefined,
+        imageUrl: safeImage ?? undefined,
         imageAlt: body.imageAlt ? String(body.imageAlt).trim() : undefined,
         ctaLabel: body.ctaLabel ? String(body.ctaLabel) : undefined,
         ctaLabelAm: body.ctaLabelAm ? String(body.ctaLabelAm) : undefined,
-        linkUrl: body.linkUrl ? String(body.linkUrl).trim() : undefined,
+        linkUrl: safeLink ?? undefined,
         placement: 'POST_LOGIN',
         frequency,
         status: body.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, X } from 'lucide-react';
+import { safeLinkUrl } from '@/lib/safe-url';
 import { useLanguage } from './language-provider';
 
 interface PopupAd {
@@ -140,8 +141,13 @@ export function AdPopup() {
   const body = (lang === 'am' && ad.bodyAm) || ad.body;
   const ctaLabel = (lang === 'am' && ad.ctaLabelAm) || ad.ctaLabel || t('auction.viewDetails');
 
+  // Checked again at the point of use rather than trusted from the API: this is
+  // the value that reaches `window.open()`, and a `javascript:` URL there runs
+  // in our origin. Ads stored before the API check exists still come through.
+  const linkUrl = safeLinkUrl(ad.linkUrl);
+
   const openLink = () => {
-    if (!ad.linkUrl) return;
+    if (!linkUrl) return;
 
     // Fire-and-forget: the navigation must not wait on the click counter.
     fetch('/api/miniapp/ads', {
@@ -155,8 +161,8 @@ export function AdPopup() {
     // popup on the destination page would bury the thing they just asked for.
     // It also bypasses the forced view rather than trapping someone engaging.
     setQueue([]);
-    if (ad.linkUrl.startsWith('/')) router.push(ad.linkUrl);
-    else window.open(ad.linkUrl, '_blank', 'noopener,noreferrer');
+    if (linkUrl.startsWith('/')) router.push(linkUrl);
+    else window.open(linkUrl, '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -232,7 +238,7 @@ export function AdPopup() {
           </h2>
           {body && <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{body}</p>}
 
-          {ad.linkUrl && (
+          {linkUrl && (
             <button
               type="button"
               onClick={openLink}

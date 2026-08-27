@@ -140,9 +140,23 @@ export function emptyParseError(parsed: ParsedList): UploadFailure & { rejected:
   };
 }
 
-/** Quotes a CSV field only when it has to be. */
+/**
+ * One CSV field: quoted where it has to be, and never handed to a spreadsheet
+ * as a formula.
+ *
+ * A participant's name and note are whatever an operator typed or uploaded, and
+ * this file is downloaded and opened in Excel. A cell beginning `=`, `+`, `-`
+ * or `@` is a formula there, not text — `=HYPERLINK(...)` or a `cmd|` DDE
+ * payload runs on the machine of whoever opens the export, which is a different
+ * person from whoever supplied the value. Prefixing an apostrophe is what makes
+ * the spreadsheet read it as the text it was meant to be; the field is then
+ * quoted, because the apostrophe has to survive being parsed back.
+ */
 export function csvCell(value: string): string {
-  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+  const guarded = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return /[",\r\n]/.test(guarded) || guarded !== value
+    ? `"${guarded.replace(/"/g, '""')}"`
+    : guarded;
 }
 
 /** A downloadable CSV of phone/name/note rows. */

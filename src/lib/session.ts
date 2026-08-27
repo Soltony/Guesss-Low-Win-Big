@@ -2,12 +2,11 @@ import { cookies } from 'next/headers';
 import prisma from './prisma';
 import {
   ACCESS_TOKEN_EXP,
-  ACCESS_TOKEN_MINUTES,
   REFRESH_TOKEN_DAYS,
   decryptJwt,
   encryptJwt,
   expiryFromDays,
-  expiryFromMinutes,
+  readJwtClaims,
   uuid,
 } from './jwt';
 import { parsePermissions } from './permissions';
@@ -158,10 +157,12 @@ export async function createAdminSession(
   );
 
   const store = await cookies();
-  store.set(ACCESS_COOKIE, accessToken, {
-    ...adminCookieBase,
-    expires: expiryFromMinutes(ACCESS_TOKEN_MINUTES),
-  });
+  // The cookie deliberately outlives the token inside it, which expires in
+  // ACCESS_TOKEN_MINUTES. What bounds access is the JWT's own `exp`, verified
+  // on every request; the cookie is kept so the browser still presents the
+  // spent token when it comes to renew, which is how a continuing session is
+  // told apart from a refresh cookie replayed on its own.
+  store.set(ACCESS_COOKIE, accessToken, { ...adminCookieBase, expires: refreshExpiresAt });
   store.set(REFRESH_COOKIE, refreshToken, { ...adminCookieBase, expires: refreshExpiresAt });
 
   return { accessToken, refreshToken, sessionId: record.id };
@@ -176,13 +177,29 @@ interface AccessPayload {
 
 /**
  * Resolves the current admin session.
- * `allowRefresh: false` validates without rotating or writing cookies — required
- * from Server Components, where cookie mutation throws.
+ *
+ * The two tokens have separate jobs and this is where that separation is
+ * enforced. By default — for every guarded page, Server Component and API
+ * route — a **valid access token is required**: the refresh cookie alone
+ * authenticates nothing. Otherwise the access token is decorative, and anyone
+ * who comes by a refresh token holds a credential that opens every endpoint
+ * directly for as long as the session lives.
+ *
+ * `allowRefresh: true` is the one exception, and only `/api/admin/auth/session`
+ * passes it. There the refresh cookie is exchanged for a fresh access token and
+ * that new cookie is written, which is the whole of what a refresh token is
+ * for. It is a Route Handler, so the write is legal there; from a Server
+ * Component, where cookie mutation throws, the default never reaches it.
+ *
+ * The exchange deliberately does not rotate the refresh token. A browser fires
+ * several guarded requests at once, each of which would race to rotate and
+ * invalidate the others' cookie mid-flight. What bounds a refresh token here is
+ * the idle and absolute limits above, which no amount of refreshing widens.
  */
 export async function getAdminSession(options?: {
   allowRefresh?: boolean;
 }): Promise<AccessPayload | null> {
-  const allowRefresh = options?.allowRefresh !== false;
+  const allowRefresh = options?.allowRefresh === true;
   const store = await cookies();
   const access = store.get(ACCESS_COOKIE)?.value;
   const refresh = store.get(REFRESH_COOKIE)?.value;
@@ -219,10 +236,29 @@ export async function getAdminSession(options?: {
     }
   }
 
+  // Past this point the caller holds no usable access token. Only the renewal
+  // endpoint may go further; for everything else this is where a request that
+  // carries nothing but a refresh cookie stops.
+  if (!allowRefresh) return null;
   if (!refresh) return null;
+
+  // A refresh token renews an access token; it is not one. A browser continuing
+  // a session always still presents its access cookie — it outlives the token
+  // inside it precisely so this check can tell the two cases apart. A request
+  // carrying the refresh cookie *alone* is that token being replayed as a
+  // credential in its own right, which is the thing being prevented here.
+  if (!access) return null;
 
   const record = await prisma.session.findUnique({ where: { refreshToken: refresh } });
   if (!record || record.revoked || record.expiresAt < new Date()) return null;
+
+  // And it must be the access token from this same session. Read unverified,
+  // because an expired signature cannot be checked — which is why it is only
+  // ever compared against the session the refresh token already proved.
+  const presented = readJwtClaims<AccessPayload>(access);
+  if (!presented || presented.sessionId !== record.id || presented.userId !== record.userId) {
+    return null;
+  }
 
   const breach = sessionLifetimeBreach(record);
   if (breach) {
@@ -233,56 +269,26 @@ export async function getAdminSession(options?: {
   const user = await prisma.user.findUnique({ where: { id: record.userId } });
   if (!user) return null;
 
-  if (!allowRefresh) {
-    await prisma.session.update({
-      where: { id: record.id },
-      data: { lastActivity: new Date() },
-    });
-    return {
-      userId: record.userId,
-      sessionId: record.id,
-      jti: record.jti,
-      passwordChangeRequired: user.passwordChangeRequired,
-    };
-  }
-
-  // Rotate both tokens on every refresh.
-  const newRefresh = await encryptJwt(
-    { userId: record.userId, t: 'refresh' },
-    `${REFRESH_TOKEN_DAYS}d`
-  );
-  const newJti = uuid();
-  // Rotation renews the token, not the session: the new expiry is still capped
-  // at the original sign-in plus the absolute lifetime, so refreshing forever
-  // cannot keep a session alive forever.
-  const absoluteDeadline = record.createdAt.getTime() + absoluteLifetimeMs();
-  const refreshExpiresAt = new Date(
-    Math.min(expiryFromDays(REFRESH_TOKEN_DAYS).getTime(), absoluteDeadline)
-  );
-
   await prisma.session.update({
     where: { id: record.id },
-    data: {
-      refreshToken: newRefresh,
-      jti: newJti,
-      expiresAt: refreshExpiresAt,
-      lastActivity: new Date(),
-    },
+    data: { lastActivity: new Date() },
   });
 
+  // The refresh token and its expiry are left exactly as they are: renewing
+  // extends nothing, so a session cannot outlive the cap set at sign-in.
   const payload: AccessPayload = {
     userId: record.userId,
     sessionId: record.id,
-    jti: newJti,
+    jti: record.jti,
     passwordChangeRequired: user.passwordChangeRequired,
   };
-  const newAccess = await encryptJwt({ ...payload }, ACCESS_TOKEN_EXP);
 
-  store.set(ACCESS_COOKIE, newAccess, {
+  // Same reasoning as at sign-in: the cookie is carried for as long as the
+  // session can live, the token inside it for fifteen minutes.
+  store.set(ACCESS_COOKIE, await encryptJwt({ ...payload }, ACCESS_TOKEN_EXP), {
     ...adminCookieBase,
-    expires: expiryFromMinutes(ACCESS_TOKEN_MINUTES),
+    expires: record.expiresAt,
   });
-  store.set(REFRESH_COOKIE, newRefresh, { ...adminCookieBase, expires: refreshExpiresAt });
 
   return payload;
 }
@@ -366,10 +372,18 @@ export interface BidderSessionPayload {
    * a webview's storage quirks cannot influence.
    */
   sid?: string;
+  /**
+   * When this sign-in happened, in epoch milliseconds.
+   *
+   * Carried through every renewal so the absolute cap is measured from the
+   * original `/connect`, not from the last request. Without it, a session that
+   * kept sliding would never end.
+   */
+  start?: number;
 }
 
 /**
- * The bidder cookie's lifetime.
+ * The bidder session's absolute cap.
  *
  * Shorter than the previous day-long window: the token inside is the customer's
  * super-app credential, and the webview can always re-exchange it silently, so
@@ -381,20 +395,62 @@ export function bidderSessionHours(): number {
   return clamp(hours, 1, 24);
 }
 
-export async function createBidderSession(payload: BidderSessionPayload) {
-  const hours = bidderSessionHours();
-  const expires = new Date(Date.now() + hours * 60 * 60_000);
-  const jwt = await encryptJwt({ sid: uuid(), ...payload }, `${hours}h`);
+/**
+ * How long a bidder session may sit unused.
+ *
+ * The admin session has had both an idle and an absolute limit for a while; the
+ * bidder cookie only had the absolute one, so a phone left on a bench kept a
+ * usable session for the full eight hours. This is the other half of that pair.
+ */
+export function bidderIdleMs(): number {
+  const configured = Number(process.env.BIDDER_IDLE_MINUTES);
+  const minutes = Number.isFinite(configured) && configured > 0 ? configured : 30;
+  return clamp(minutes, 5, 240) * 60_000;
+}
+
+/**
+ * When the cookie issued now must stop working: the idle window from this
+ * moment, or the absolute cap from sign-in, whichever comes first.
+ *
+ * Both limits live in the token's own `exp`, which means the signature check in
+ * `decryptJwt` enforces them — there is no separate timestamp a caller could
+ * forget to compare, and nothing client-side that could be wound back.
+ */
+function bidderExpiry(startedAt: number): Date {
+  const idleDeadline = Date.now() + bidderIdleMs();
+  const absoluteDeadline = startedAt + bidderSessionHours() * 60 * 60_000;
+  return new Date(Math.min(idleDeadline, absoluteDeadline));
+}
+
+/** Signs a bidder cookie that expires at `expires`, and sets it. */
+async function writeBidderCookie(payload: BidderSessionPayload, expires: Date) {
+  const seconds = Math.max(1, Math.round((expires.getTime() - Date.now()) / 1000));
+  const jwt = await encryptJwt({ ...payload }, `${seconds}s`);
   const store = await cookies();
   store.set(MINIAPP_COOKIE, jwt, { ...bidderCookieBase, expires });
   return jwt;
 }
 
+export async function createBidderSession(payload: BidderSessionPayload) {
+  const start = Date.now();
+  return writeBidderCookie({ sid: uuid(), ...payload, start }, bidderExpiry(start));
+}
+
+/**
+ * The current bidder, and a nudge to the idle clock.
+ *
+ * Reading the session is also the moment we know the bidder is active, so the
+ * cookie is re-issued with a fresh idle window — capped, always, at the
+ * absolute deadline carried in `start`. The write is best-effort: this is
+ * called from Server Components as well as route handlers, and cookie mutation
+ * throws in the former. A page view that cannot slide the window still reads a
+ * valid session, and the API call the shell fires alongside it slides one.
+ */
 export async function getBidderSession(): Promise<BidderSessionPayload | null> {
   const store = await cookies();
   const raw = store.get(MINIAPP_COOKIE)?.value;
   if (!raw) return null;
-  const payload = await decryptJwt<BidderSessionPayload>(raw);
+  const payload = await decryptJwt<BidderSessionPayload & { iat?: number }>(raw);
   if (!payload?.bidderId) return null;
   // A real session always carries the super-app token; a test session has none.
   if (!payload.isTest && !payload.superAppToken) return null;
@@ -402,7 +458,24 @@ export async function getBidderSession(): Promise<BidderSessionPayload | null> {
   // deployment where the bypass has since been switched off would let a cookie
   // issued during testing keep working in production.
   if (payload.isTest && process.env.ALLOW_TEST_LOGIN !== 'true') return null;
-  return payload;
+
+  // Cookies issued before `start` existed fall back to the token's own issue
+  // time, so an upgrade does not sign every bidder out mid-session.
+  const startedAt = payload.start ?? (payload.iat ? payload.iat * 1000 : Date.now());
+  const expiry = bidderExpiry(startedAt);
+  if (expiry.getTime() <= Date.now()) return null;
+
+  const { iat: _iat, exp: _exp, ...session } = payload as typeof payload & { exp?: number };
+  const current: BidderSessionPayload = { ...session, start: startedAt };
+
+  // Re-signing on every single request would cost a signature per API call for
+  // no gain; a minute of drift on a thirty-minute window changes nothing.
+  const issuedAt = payload.iat ? payload.iat * 1000 : 0;
+  if (Date.now() - issuedAt > 60_000) {
+    await writeBidderCookie(current, expiry).catch(() => null);
+  }
+
+  return current;
 }
 
 export async function deleteBidderSession() {

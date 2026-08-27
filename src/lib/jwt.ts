@@ -1,4 +1,4 @@
-import { SignJWT, jwtVerify } from 'jose';
+import { SignJWT, decodeJwt, jwtVerify } from 'jose';
 import { requireSecret } from './secrets';
 import { secureUuid } from './random';
 
@@ -44,6 +44,22 @@ export async function decryptJwt<T = any>(token: string): Promise<T | null> {
   try {
     const { payload } = await jwtVerify(token, signingKey(), { algorithms: ['HS256'] });
     return payload as T;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The claims inside a token, **without verifying it**.
+ *
+ * For the one question a verified read cannot answer: which session an already
+ * expired access token belonged to. Nothing here may be trusted as authority —
+ * a caller writes whatever it likes into an unverified token — so use it only
+ * to correlate against something that has been verified, never to authorise.
+ */
+export function readJwtClaims<T = any>(token: string): T | null {
+  try {
+    return decodeJwt(token) as T;
   } catch {
     return null;
   }

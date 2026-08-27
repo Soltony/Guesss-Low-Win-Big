@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { safeLinkUrl } from '@/lib/safe-url';
 import { useLanguage } from './language-provider';
 
 export interface HomeBanner {
@@ -41,10 +42,16 @@ export function BannerCarousel({ banners }: { banners: HomeBanner[] }) {
         {banners.map((banner) => {
           const title = (lang === 'am' && banner.titleAm) || banner.title;
 
+          // The API refuses to store anything but https and in-app paths, but
+          // rows written before that check are still in the database and a
+          // rejected scheme here is an `href` that runs as script. A banner
+          // whose link does not survive this is shown as a plain card.
+          const linkUrl = safeLinkUrl(banner.linkUrl);
+
           const className = cn(
             'gl-card relative aspect-[2/1] shrink-0 snap-center overflow-hidden',
             multiple ? 'w-[88%]' : 'w-full',
-            banner.linkUrl && 'gl-card-interactive'
+            linkUrl && 'gl-card-interactive'
           );
 
           // Falls back to empty — decorative — because the title below is real
@@ -73,7 +80,7 @@ export function BannerCarousel({ banners }: { banners: HomeBanner[] }) {
             </>
           );
 
-          if (!banner.linkUrl) {
+          if (!linkUrl) {
             return (
               <div key={banner.id} className={className}>
                 {content}
@@ -83,14 +90,14 @@ export function BannerCarousel({ banners }: { banners: HomeBanner[] }) {
 
           // Same split as the ad popup: in-app paths route through the client
           // router, anything else is an outbound link and leaves the mini-app.
-          return banner.linkUrl.startsWith('/') ? (
-            <Link key={banner.id} href={banner.linkUrl} className={className}>
+          return linkUrl.startsWith('/') ? (
+            <Link key={banner.id} href={linkUrl} className={className}>
               {content}
             </Link>
           ) : (
             <a
               key={banner.id}
-              href={banner.linkUrl}
+              href={linkUrl}
               target="_blank"
               rel="noopener noreferrer"
               className={className}

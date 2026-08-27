@@ -301,53 +301,19 @@ export async function copyParticipants(
 /**
  * Reads an uploaded file into entries.
  *
- * CSV and plain text are parsed directly; `.xlsx` goes through ExcelJS, which
- * is loaded on demand so the mini-app bundle never pulls it in. Only the first
- * worksheet is read — a workbook with the list on a second tab is worth an
- * explicit error rather than a silent import of nothing.
+ * CSV and plain text are parsed directly; `.xlsx` goes through the reader in
+ * `xlsx-reader.ts`, loaded on demand so the mini-app bundle never pulls it in.
+ * Only the first worksheet is read — a workbook with the list on a second tab
+ * comes back empty, which the caller reports rather than importing nothing
+ * silently.
  */
 export async function readParticipantFile(file: File): Promise<ParsedList> {
   const name = 'name' in file ? String(file.name).toLowerCase() : '';
 
   if (name.endsWith('.xlsx') || name.endsWith('.xlsm')) {
-    const ExcelJS = (await import('exceljs')).default;
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(await file.arrayBuffer());
-
-    const sheet = workbook.worksheets[0];
-    if (!sheet) {
-      return { entries: [], rejected: [], duplicates: 0, headerDetected: false };
-    }
-
-    const rows: string[][] = [];
-    sheet.eachRow({ includeEmpty: false }, (row) => {
-      const cells: string[] = [];
-      // `row.values` is 1-based with a hole at index 0, and a numeric phone
-      // cell arrives as a number — which would have dropped its leading zero
-      // back when Excel saved it, so normalisation still has to cope.
-      const values = Array.isArray(row.values) ? row.values : [];
-      for (let index = 1; index < values.length; index += 1) {
-        cells.push(cellText(values[index]));
-      }
-      rows.push(cells);
-    });
-
-    return rowsToEntries(rows);
+    const { readXlsxRows } = await import('./xlsx-reader');
+    return rowsToEntries(readXlsxRows(await file.arrayBuffer()));
   }
 
   return parseParticipantText(await file.text());
-}
-
-/** One spreadsheet cell as text, whatever ExcelJS made of it. */
-function cellText(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  if (value instanceof Date) return value.toISOString();
-  const rich = value as { text?: string; result?: unknown; richText?: { text: string }[] };
-  if (typeof rich.text === 'string') return rich.text;
-  if (Array.isArray(rich.richText)) return rich.richText.map((part) => part.text).join('');
-  if (rich.result !== undefined) return cellText(rich.result);
-  return '';
 }
