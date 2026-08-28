@@ -69,7 +69,7 @@ export async function PATCH(
   }
 
   const body = await readJsonBody(req);
-  if (body === null) return jsonError('Request body is too large.', 413);
+  if (body instanceof NextResponse) return body;
   const hasBids = auction.bidCount > 0;
 
   const data: Record<string, unknown> = {};

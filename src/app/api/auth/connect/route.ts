@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await readJsonBody(req);
-    if (body === null) return jsonError('Request body is too large.', 413);
+    if (body instanceof NextResponse) return body;
     superAppToken = body?.superAppToken || req.headers.get('authorization') || undefined;
     source = body?.superAppToken
       ? 'request body'

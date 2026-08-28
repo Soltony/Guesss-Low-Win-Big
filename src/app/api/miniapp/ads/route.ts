@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
   if (!session) return jsonError('Not authenticated', 401);
 
   const body = await readJsonBody(req);
-  if (body === null) return jsonError('Request body is too large.', 413);
+  if (body instanceof NextResponse) return body;
   const adId = String(body?.adId || '').trim();
   if (!adId) return jsonError('Ad id is required.', 400);
 

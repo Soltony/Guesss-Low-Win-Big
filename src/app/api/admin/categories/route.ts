@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   const { user } = guard;
 
   const body = await readJsonBody(req);
-  if (body === null) return jsonError('Request body is too large.', 413);
+  if (body instanceof NextResponse) return body;
   const name = String(body.name || '').trim();
   if (!name) return jsonError('Category name is required.', 400);
 

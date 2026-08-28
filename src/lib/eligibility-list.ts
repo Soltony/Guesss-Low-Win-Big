@@ -1,4 +1,5 @@
 import { isValidEthiopianPhone, normalizePhone } from './format';
+import { containsMarkup } from './plain-text';
 
 /**
  * Parsing for uploaded participant lists.
@@ -194,14 +195,30 @@ export function rowsToEntries(rows: string[][]): ParsedList {
       return;
     }
 
+    const fullName = columns.name >= 0 ? trim(row[columns.name]).slice(0, MAX_NAME_LENGTH) : '';
+    const note = columns.note >= 0 ? trim(row[columns.note]).slice(0, MAX_NOTE_LENGTH) : '';
+
+    // A spreadsheet is a text field like any other. This is the one route into
+    // the database that does not pass through readJsonBody, so the same rule is
+    // applied here rather than left as the gap someone finds later.
+    //
+    // Checked before the number is marked as seen: a rejected row must not
+    // claim the number, or a later good row for the same person would be
+    // dropped as a duplicate and nobody would be on the list at all.
+    if (containsMarkup(fullName) || containsMarkup(note)) {
+      rejected.push({
+        line,
+        value: raw.slice(0, 60),
+        reason: 'Name or note contains HTML or script tags.',
+      });
+      return;
+    }
+
     if (seen.has(phoneNumber)) {
       duplicates += 1;
       return;
     }
     seen.add(phoneNumber);
-
-    const fullName = columns.name >= 0 ? trim(row[columns.name]).slice(0, MAX_NAME_LENGTH) : '';
-    const note = columns.note >= 0 ? trim(row[columns.note]).slice(0, MAX_NOTE_LENGTH) : '';
 
     entries.push({
       phoneNumber,

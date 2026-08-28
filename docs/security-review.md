@@ -361,3 +361,37 @@ character more, so the over-length case cannot be typed at all.
 
 Covered by `src/lib/format.test.ts`, including the reported entry and the
 normalization step that used to swallow it.
+
+### HTML and script markup was accepted in plain-text fields (CWE-20, Low)
+
+`<script>alert(1)</script>` submitted into a text field was stored as typed. It
+did not execute — React escapes everything it renders, and the one
+`dangerouslySetInnerHTML` in the tree (`components/ui/chart.tsx`) sets CSS
+variables, not user text — but nothing rejected it either.
+
+The refusal now lives in `readJsonBody()` (`src/lib/api.ts`), the single door
+every write handler already passes through, rather than in the field the tester
+happened to try. All 31 call sites were converted; the function returns the body
+or the response that refuses it, so an unconverted site fails to compile rather
+than silently skipping the check.
+
+- **What counts as markup** (`src/lib/plain-text.ts`): an angle bracket opening
+  what a parser would read as a tag — `<script`, `</div`, `<img `, `<!--`.
+  Deliberately not "contains a `<`": prose compares things (`under 18 < 21`,
+  `5<10`), and a rule that rejected those would be worked around rather than
+  obeyed.
+- **The refusal names the field**, so it appears under the offending input in
+  the same way the other validation errors now do.
+- **The bulk participant import** (`src/lib/eligibility-list.ts`) is the one
+  path into the database that does not pass through `readJsonBody`, so the same
+  rule is applied per row there, reported back through the existing per-row
+  rejection list. It runs before the row claims its phone number, so a rejected
+  row cannot make a later good row for the same person look like a duplicate.
+
+The point is not that an XSS was possible today — it was not. It is that the
+value travels to places React does not escape (an SMS body, a CSV export, an
+audit row opened in a spreadsheet) and that the safety of the stored data should
+not rest on every future reader remembering to escape it.
+
+Covered by `src/lib/plain-text.test.ts` and two cases in
+`src/lib/eligibility-list.test.ts`.

@@ -120,7 +120,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { user } = guard;
 
   const { id } = await params;
-  const body = ((await readJsonBody(req)) ?? {}) as Record<string, unknown>;
+  // Not cast straight to a record: the cast would swallow the refusal and
+  // treat it as an empty body.
+  const parsed = await readJsonBody(req);
+  if (parsed instanceof NextResponse) return parsed;
+  const body = parsed as Record<string, unknown>;
 
   try {
     await updateList({

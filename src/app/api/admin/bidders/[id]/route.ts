@@ -17,7 +17,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!bidder) return jsonError('Bidder not found', 404);
 
   const body = await readJsonBody(req);
-  if (body === null) return jsonError('Request body is too large.', 413);
+  if (body instanceof NextResponse) return body;
   const status = String(body?.status || '');
   const reason = String(body?.reason || '').trim();
 

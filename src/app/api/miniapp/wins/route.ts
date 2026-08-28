@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
   if (!session) return jsonError('Not authenticated', 401);
 
   const body = await readJsonBody(req);
-  if (body === null) return jsonError('Request body is too large.', 413);
+  if (body instanceof NextResponse) return body;
   const winnerId = String(body?.winnerId || '');
   const deliveryName = String(body?.deliveryName || '').trim();
   const deliveryPhone = String(body?.deliveryPhone || '').trim();

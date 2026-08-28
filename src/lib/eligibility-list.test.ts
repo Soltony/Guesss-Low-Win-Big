@@ -126,3 +126,26 @@ describe('withoutExisting', () => {
     expect(fresh.map((entry) => entry.phoneNumber)).toEqual(['251911223344']);
   });
 });
+
+describe('markup in an imported row', () => {
+  it('rejects the row and reports the line back to the operator', () => {
+    const result = parseParticipantText(
+      ['phone,name', '0912345678,<script>alert(1)</script>', '0911223344,Abebe'].join('\n')
+    );
+
+    expect(result.entries.map((entry) => entry.phoneNumber)).toEqual(['251911223344']);
+    expect(result.rejected).toHaveLength(1);
+    expect(result.rejected[0].reason).toContain('HTML or script tags');
+  });
+
+  it('does not let a rejected row claim the number for a later good one', () => {
+    const result = parseParticipantText(
+      ['phone,name', '0912345678,<b>Abebe</b>', '0912345678,Abebe'].join('\n')
+    );
+
+    expect(result.entries).toEqual([
+      { phoneNumber: '251912345678', fullName: 'Abebe', note: null },
+    ]);
+    expect(result.duplicates).toBe(0);
+  });
+});

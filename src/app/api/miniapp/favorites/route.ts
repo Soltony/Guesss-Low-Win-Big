@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   if (!session) return jsonError('Not authenticated', 401);
 
   const body = await readJsonBody(req);
-  if (body === null) return jsonError('Request body is too large.', 413);
+  if (body instanceof NextResponse) return body;
   const auctionId = String(body?.auctionId || '');
   if (!auctionId) return jsonError('Auction is required.', 400);
 

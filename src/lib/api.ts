@@ -4,6 +4,7 @@ import { hasPermission } from './permissions';
 import { clientAddress } from './request-context';
 import { secureHex } from './random';
 import { NO_STORE } from './security-headers';
+import { findMarkupField } from './plain-text';
 import type { PermissionAction, SessionUser } from './types';
 
 /**
@@ -129,22 +130,45 @@ export function parsePaging(req: NextRequest, defaultSize = 20) {
  */
 export const MAX_JSON_BODY_BYTES = 256 * 1024;
 
-export async function readJsonBody<T = any>(
+/**
+ * Reads a JSON body, or the response that refuses it.
+ *
+ * Both refusals live here rather than at the call sites: an oversized body,
+ * and one carrying HTML or script tags in a field that takes plain text. Doing
+ * the markup check at the single door every write handler already passes
+ * through is the only version of it that stays applied — a rule repeated in
+ * thirty routes is a rule the thirty-first will not have.
+ *
+ * Callers narrow with `instanceof NextResponse` and return it as-is.
+ */
+export async function readJsonBody<T = Record<string, any>>(
   req: NextRequest,
   maxBytes = MAX_JSON_BODY_BYTES
-): Promise<T | null> {
+): Promise<T | NextResponse> {
+  const tooLarge = () => jsonError('Request body is too large.', 413);
+
   const declared = Number(req.headers.get('content-length') ?? '');
-  if (Number.isFinite(declared) && declared > maxBytes) return null;
+  if (Number.isFinite(declared) && declared > maxBytes) return tooLarge();
 
   const text = await req.text().catch(() => '');
-  if (text.length > maxBytes) return null;
+  if (text.length > maxBytes) return tooLarge();
   if (!text) return {} as T;
 
+  let parsed: unknown;
   try {
-    return JSON.parse(text) as T;
+    parsed = JSON.parse(text);
   } catch {
     return {} as T;
   }
+
+  const markupField = findMarkupField(parsed);
+  if (markupField) {
+    return jsonError('HTML and script tags are not allowed here.', 400, {
+      field: markupField,
+    });
+  }
+
+  return parsed as T;
 }
 
 /** A ready-to-return 429 with the standard `Retry-After` header. */

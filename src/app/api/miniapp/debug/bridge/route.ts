@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
   if (!session) return jsonError('Not authenticated', 401);
 
   const body = await readJsonBody(req);
-  if (body === null) return jsonError('Request body is too large.', 413);
+  if (body instanceof NextResponse) return body;
 
   logSuperApp('BRIDGE ↥ native hand-off reported by the webview', {
     bidderId: session.bidderId,

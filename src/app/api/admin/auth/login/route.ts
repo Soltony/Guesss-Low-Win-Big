@@ -19,7 +19,7 @@ const GENERIC_FAILURE = 'Invalid email or password.';
 export async function POST(req: NextRequest) {
   const meta = clientMeta(req);
   const body = await readJsonBody(req);
-  if (body === null) return jsonError('Request body is too large.', 413);
+  if (body instanceof NextResponse) return body;
   const email = String(body?.email || '').trim().toLowerCase();
   const password = String(body?.password || '');
 

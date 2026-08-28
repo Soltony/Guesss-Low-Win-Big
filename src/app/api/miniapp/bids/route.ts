@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await readJsonBody(req);
-  if (body === null) return jsonError('Request body is too large.', 413);
+  if (body instanceof NextResponse) return body;
   const auctionId = String(body?.auctionId || '');
   const amount = Number(body?.amount);
 

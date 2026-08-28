@@ -20,7 +20,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(req: NextRequest) {
   const body = await readJsonBody(req);
-  if (body === null) return jsonError('Request body is too large.', 413);
+  if (body instanceof NextResponse) return body;
   const kind = String(body?.kind || '');
 
   const moduleKey = CONTENT_KIND_MODULES[kind];

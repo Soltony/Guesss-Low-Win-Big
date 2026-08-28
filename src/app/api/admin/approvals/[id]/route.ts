@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const body = await readJsonBody(req);
-  if (body === null) return jsonError('Request body is too large.', 413);
+  if (body instanceof NextResponse) return body;
   const decision = String(body?.decision || '').toUpperCase();
   const comment = body?.comment ? String(body.comment).trim() : undefined;
   const { id } = await params;

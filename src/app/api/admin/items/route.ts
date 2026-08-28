@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
   const { user } = guard;
 
   const body = await readJsonBody(req);
-  if (body === null) return jsonError('Request body is too large.', 413);
+  if (body instanceof NextResponse) return body;
   const name = String(body.name || '').trim();
   const categoryId = String(body.categoryId || '');
   const description = String(body.description || '').trim();
