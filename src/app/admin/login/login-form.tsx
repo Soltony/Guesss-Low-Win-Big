@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertCircle,
   ArrowRight,
+  Check,
   CheckCircle2,
   Eye,
   EyeOff,
@@ -16,6 +17,7 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
 
 /**
  * Filled fields rather than outlined ones: the panel is already a plain white
@@ -24,18 +26,57 @@ import { Label } from '@/components/ui/label';
 const FIELD =
   'h-12 rounded-xl border-transparent bg-secondary pl-11 text-[15px] transition-colors focus-visible:bg-card focus-visible:border-primary/40';
 
+/**
+ * Sign-in has four visible states, not two. Collapsing them into a boolean is
+ * what makes most login buttons feel dead: the arrow leaves, a ring tracks the
+ * request, a tick lands, a refusal shakes — each has to read at a glance.
+ */
+type Status = 'idle' | 'submitting' | 'success' | 'error';
+
+/** Long enough for the shake to finish before the arrow comes back. */
+const SHAKE_MS = 520;
+/** Long enough to read the tick, short enough not to feel like latency. */
+const HANDOFF_MS = 560;
+
 export function LoginForm({ notice }: { notice?: string | null }) {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<Status>('idle');
+
+  const passwordRef = useRef<HTMLInputElement>(null);
+
+  // The machine hands off to the router on a timer, and a component that has
+  // gone away must not still be scheduling navigations.
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => {
+    const pending = timers.current;
+    return () => pending.forEach(clearTimeout);
+  }, []);
+  const later = (run: () => void, ms: number) => {
+    timers.current.push(setTimeout(run, ms));
+  };
+
+  const busy = status === 'submitting' || status === 'success';
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setLoading(true);
+    if (busy) return;
+
+    setStatus('submitting');
     setError(null);
+
+    const fail = (message: string) => {
+      setError(message);
+      setStatus('error');
+      // Back to idle once the shake has played, so the button is live again.
+      later(() => setStatus('idle'), SHAKE_MS);
+      // Whatever was wrong, the password is what gets retyped. Put the cursor
+      // there rather than leaving it on the button they just pressed.
+      passwordRef.current?.select();
+    };
 
     try {
       const response = await fetch('/api/admin/auth/login', {
@@ -46,16 +87,19 @@ export function LoginForm({ notice }: { notice?: string | null }) {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        setError(data?.error || 'Sign in failed.');
+        fail(data?.error || 'Sign in failed.');
         return;
       }
 
-      router.replace(data.redirectTo || '/admin');
-      router.refresh();
+      // Stays in `success` through the handoff — no flicker back to the arrow
+      // while the next page renders.
+      setStatus('success');
+      later(() => {
+        router.replace(data.redirectTo || '/admin');
+        router.refresh();
+      }, HANDOFF_MS);
     } catch {
-      setError('Network error. Please try again.');
-    } finally {
-      setLoading(false);
+      fail('Network error. Please try again.');
     }
   };
 
@@ -69,18 +113,19 @@ export function LoginForm({ notice }: { notice?: string | null }) {
             in the flow of the form is the better of the two.
 
             It sits on the join between the two halves of the card, which is
-            where the eye lands first — so it is the one thing here that moves
-            on its own. All of it stops while the request is in flight; the
-            spinner is the signal then, and competing motion only muddies it. */}
+            where the eye lands first — so it carries the whole sequence: the
+            arrow launches out, a ring tracks the request, a tick lands, and a
+            refusal shakes it. */}
         <button
           type="submit"
-          disabled={loading}
+          disabled={busy}
           tabIndex={-1}
           aria-hidden="true"
           className="group absolute left-0 top-1/2 hidden h-[68px] w-[68px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full lg:flex"
         >
-          {/* A dot doing a slow lap just outside the white ring. */}
-          {!loading && (
+          {/* Idle only. Once the request is out, ambient motion competes with
+              the ring that is actually reporting something. */}
+          {status === 'idle' && (
             <span
               className="gl-spin-slow pointer-events-none absolute -inset-[18px] rounded-full"
               style={{ animationDuration: '11s' }}
@@ -89,25 +134,60 @@ export function LoginForm({ notice }: { notice?: string | null }) {
             </span>
           )}
 
-          {/* The gold face is its own layer so the halo below can be stacked
-              over it — the rings have to cross the white ring, not disappear
-              behind it. */}
-          <span className="gl-gold relative flex h-full w-full items-center justify-center rounded-full ring-[10px] ring-card">
-            {loading ? (
-              <Loader2 className="h-6 w-6 animate-spin" />
-            ) : (
-              <ArrowRight
-                className="h-6 w-6 transition-transform duration-200 group-hover:translate-x-0.5"
-                strokeWidth={2.5}
-              />
+          {/* The gold face is its own layer so the halo can stack over it — the
+              rings have to cross the white ring, not disappear behind it. */}
+          <span
+            className={cn(
+              'gl-gold relative flex h-full w-full items-center justify-center rounded-full ring-[10px] ring-card transition-transform duration-300',
+              status === 'submitting' && 'scale-95',
+              status === 'success' && 'scale-105',
+              // The shake goes here, not on the button: the button is holding a
+              // centring translate that its own transform would overwrite.
+              status === 'error' && 'gl-shake'
             )}
+          >
+            {/* Kept mounted in every state, so it has something to travel from. */}
+            <ArrowRight
+              className={cn(
+                'absolute h-6 w-6 transition-all duration-300',
+                busy ? 'translate-x-9 opacity-0' : 'group-hover:translate-x-0.5'
+              )}
+              strokeWidth={2.5}
+            />
+
+            {/* An arc running the rim rather than a spinner dropped in the
+                middle — the button itself becomes the progress indicator. */}
+            {status === 'submitting' && (
+              <svg
+                viewBox="0 0 68 68"
+                className="absolute inset-0 h-full w-full animate-spin text-black/70"
+              >
+                <circle
+                  cx="34"
+                  cy="34"
+                  r="27"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeDasharray="44 126"
+                />
+              </svg>
+            )}
+
+            {status === 'success' && <Check className="gl-pop absolute h-8 w-8" strokeWidth={3} />}
           </span>
 
           {/* Last child, so both rings paint above the face and the ring alike.
               As ::before and ::after of one element they stay half a cycle
               apart for free. */}
-          {!loading && (
+          {status === 'idle' && (
             <span className="gl-halo pointer-events-none absolute inset-0 rounded-full" />
+          )}
+
+          {/* The payoff: a single ring leaving the button as the tick lands. */}
+          {status === 'success' && (
+            <span className="gl-burst pointer-events-none absolute inset-0 rounded-full border-2 border-primary" />
           )}
         </button>
 
@@ -117,9 +197,7 @@ export function LoginForm({ notice }: { notice?: string | null }) {
             Secure sign-in
           </span>
           <h1 className="mt-4 text-[28px] font-extrabold tracking-tight">Welcome back</h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">
-            Sign in to your account to continue
-          </p>
+          <p className="mt-1.5 text-sm text-muted-foreground">Sign in to your account to continue</p>
         </div>
 
         <div className="mt-7 space-y-4">
@@ -166,6 +244,7 @@ export function LoginForm({ notice }: { notice?: string | null }) {
               <Input
                 id="password"
                 type={showPassword ? 'text' : 'password'}
+                ref={passwordRef}
                 autoComplete="current-password"
                 required
                 value={password}
@@ -185,13 +264,19 @@ export function LoginForm({ notice }: { notice?: string | null }) {
           </div>
         </div>
 
+        {/* Below lg the seam button is not rendered at all, so this one carries
+            the same states on its own. */}
         <button
           type="submit"
-          disabled={loading}
-          className="gl-gold mt-7 flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={busy}
+          className={cn(
+            'gl-gold mt-7 flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-bold disabled:cursor-not-allowed',
+            status === 'error' && 'gl-shake'
+          )}
         >
-          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-          {loading ? 'Signing in' : 'Sign in'}
+          {status === 'submitting' && <Loader2 className="h-4 w-4 animate-spin" />}
+          {status === 'success' && <Check className="gl-pop h-4 w-4" strokeWidth={3} />}
+          {status === 'submitting' ? 'Signing in' : status === 'success' ? 'Signed in' : 'Sign in'}
         </button>
 
         <p className="mt-6 border-t border-border pt-5 text-center text-xs leading-relaxed text-muted-foreground">

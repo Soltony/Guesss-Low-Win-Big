@@ -348,6 +348,22 @@
   .gl-sheen {
     animation: gl-sheen 6.5s ease-in-out infinite;
   }
+
+  /* One-shot ring thrown off when a sign-in lands. */
+  .gl-burst {
+    animation: gl-burst 0.65s cubic-bezier(0, 0, 0.2, 1) forwards;
+  }
+
+  /* A refused sign-in. Put this on an element that is not already carrying a
+     transform — it sets its own, and would eat a centring translate. */
+  .gl-shake {
+    animation: gl-shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  }
+
+  /* Overshooting entrance, for the tick that replaces the arrow. */
+  .gl-pop {
+    animation: gl-pop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
 }
 
 @keyframes gl-ping {
@@ -445,6 +461,48 @@
   }
 }
 
+@keyframes gl-burst {
+  0% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  100% {
+    transform: scale(2.7);
+    opacity: 0;
+  }
+}
+
+@keyframes gl-shake {
+  10%,
+  90% {
+    transform: translateX(-2px);
+  }
+  20%,
+  80% {
+    transform: translateX(4px);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-7px);
+  }
+  40%,
+  60% {
+    transform: translateX(7px);
+  }
+}
+
+@keyframes gl-pop {
+  0% {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 /* Motion is decoration here; never impose it on people who opt out. */
 @media (prefers-reduced-motion: reduce) {
   .gl-rise,
@@ -456,14 +514,17 @@
   .gl-spin-slow,
   .gl-float,
   .gl-twinkle,
-  .gl-sway {
+  .gl-sway,
+  .gl-shake,
+  .gl-pop {
     animation: none;
   }
   /* These two exist only to move. Frozen mid-sweep they are artefacts, so
      they are removed rather than stilled. */
   .gl-halo::before,
   .gl-halo::after,
-  .gl-sheen {
+  .gl-sheen,
+  .gl-burst {
     display: none;
   }
   .gl-card,
