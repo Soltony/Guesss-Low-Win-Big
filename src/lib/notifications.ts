@@ -1,12 +1,12 @@
 import prisma from './prisma';
 import { getSettings } from './settings';
+import { isSmsConfigured, sendSms } from './sms';
 import { MASKED_AMOUNT } from './format';
 import type { Language } from './types';
 
 /**
  * Outbound messaging. Templates live in the DB so operations can reword a
- * message without a deploy; the SMS transport is a thin adapter around the
- * provider endpoint configured in the environment.
+ * message without a deploy; the transport underneath is `sms.ts`.
  */
 
 export const TEMPLATE_CODES = {
@@ -115,40 +115,15 @@ async function dispatch(
   /** The masked rendering, for anything written to a log rather than sent. */
   loggedBody: string = body
 ): Promise<{ ok: boolean; error?: string }> {
-  const url = process.env.SMS_API_URL;
-
   // Without a configured provider we still record the message so the flow is
   // fully exercised and operations can see exactly what would have been sent —
   // masked, because stdout is a log like any other.
-  if (!url) {
+  if (!isSmsConfigured()) {
     console.log(`[notifications] (no provider configured) ${channel} → ${recipient}: ${loggedBody}`);
     return { ok: true };
   }
 
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(process.env.SMS_API_KEY ? { Authorization: `Bearer ${process.env.SMS_API_KEY}` } : {}),
-      },
-      body: JSON.stringify({
-        to: recipient,
-        message: body,
-        subject,
-        from: process.env.SMS_SENDER_ID,
-      }),
-      cache: 'no-store',
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      return { ok: false, error: `Provider responded ${response.status}: ${text.slice(0, 500)}` };
-    }
-    return { ok: true };
-  } catch (error: any) {
-    return { ok: false, error: error?.message || 'Unknown transport error' };
-  }
+  return sendSms(recipient, body, subject);
 }
 
 export const DEFAULT_TEMPLATES: {

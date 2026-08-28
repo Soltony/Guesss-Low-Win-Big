@@ -275,3 +275,66 @@ Confirmed against a running server, not just by reading the diff.
 | Full mini-app flow | test sign-in → profile, wins, favourites, bids → bid placed and read back; terms guard and CSRF still enforced |
 
 Probe accounts, the probe role and the probe bidders were removed afterwards.
+
+---
+
+## 8. Follow-up review
+
+Raised after the review above, in *Additional guess low findings*.
+
+### The temporary password was shown to the administrator (CWE-522, Medium)
+
+Creating an admin account, or resetting one, returned the generated one-time
+password in the API response and rendered it in a dialog for the operator to copy
+and pass on by hand. That put a live credential in front of a second party and left
+its delivery to whatever channel that person happened to use.
+
+The credential now goes only to the account holder. `deliverTempPassword()`
+(`src/lib/temp-password.ts`) sends it by SMS to the account's own number and the
+routes return nothing but whether it arrived:
+
+```
+{ passwordDelivery: { delivered: true, recipient: "2519****44" } }
+```
+
+Deliberate details:
+
+- **It bypasses the template pipeline.** `notify()` writes every message body to
+  `NotificationLog`, readable by anyone holding `notifications.logs`. The transport
+  was split out into `src/lib/sms.ts` so a credential can be sent without being
+  stored — no template row, no log row.
+- **It ignores `notifications.enabled`.** That switch governs bidder messaging.
+  Silencing auction SMS should not make colleagues’ accounts unreachable.
+- **A missing provider is a failure, not a success.** `notify()` prints and returns
+  ok when `SMS_API_URL` is unset; `sendSms()` reports the failure, so the caller
+  knows the message did not go out.
+- **The failure reason never leaves the server.** The operator is told the SMS did
+  not go out and nothing more; why it failed goes to the server log and the audit
+  row. Even there the password is stripped from the provider’s error text first — a
+  provider that echoes the failed request back would otherwise reintroduce the exact
+  disclosure being fixed.
+- **The audit row records delivery, not the credential:** `passwordDelivered` and a
+  redacted `deliveryError`.
+
+**Retry.** The failure dialog offers a retry. There is nothing stored to resend — the
+password exists as a hash from the moment it is issued — so a retry runs the
+password-reset path: it mints a fresh one-time password, sends that, and invalidates
+whatever the failed attempt generated. The button is shown only to operators holding
+`users.update`, since that is the endpoint it calls.
+
+**Terminal fallback.** If the send fails, the password is printed to the server log
+with the reason and the recipient. This is a deliberate exception to "never log a
+temporary password": the alternative is an account nobody can sign into, recoverable
+only by a retry that may fail identically. It is reachable only by someone with server
+access, it is labelled as a fallback, and it tells whoever reads it to reset the
+account once SMS is restored. With no `SMS_API_URL` configured every issuance takes
+this path, which is why `.env.example` now says to configure the provider before going
+live.
+
+Covered by `src/lib/temp-password.test.ts`: the message carries the password, the
+fallback prints it, a thrown transport is treated as a failed send rather than
+rolling back a created account, and the password never survives in a returned error.
+
+### Phone-number length validation (CWE-20, Low)
+
+Not addressed here — see the finding list.

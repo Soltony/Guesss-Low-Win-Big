@@ -5,7 +5,8 @@ import { createAuditLog } from '@/lib/audit-log';
 import { generateTempPassword, hashPassword, isValidEmail } from '@/lib/admin-users';
 import { revokeAllUserSessions } from '@/lib/session';
 import { SUPER_ADMIN_ROLE } from '@/lib/permissions';
-import { normalizePhone } from '@/lib/format';
+import { maskPhone, normalizePhone } from '@/lib/format';
+import { deliverTempPassword } from '@/lib/temp-password';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,8 +25,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   if (action === 'reset-password') {
     // Self-reset is a lockout: the revoke below kills the actor's own session,
-    // and the one-time password is only ever shown in the response dialog, so a
-    // refresh mid-flow signs them out holding a password nobody has read.
+    // and the one-time password only ever goes to the account holder by SMS, so
+    // the actor would be locked out of a password they never get to read.
     if (id === actor.id) {
       return jsonError('Use Change password to update your own password.', 409);
     }
@@ -43,16 +44,33 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // Any live session keeps working otherwise, defeating the reset.
     await revokeAllUserSessions(id);
 
+    const delivery = await deliverTempPassword({
+      fullName: target.fullName,
+      phoneNumber: target.phoneNumber,
+      password: tempPassword,
+      purpose: 'RESET',
+    });
+
     await createAuditLog({
       actorId: actor.id,
       actorName: actor.fullName,
       action: 'USER_PASSWORD_RESET',
       entity: 'User',
       entityId: id,
-      details: { email: target.email },
+      details: {
+        email: target.email,
+        passwordDelivered: delivery.delivered,
+        deliveryError: delivery.error ?? null,
+      },
     });
 
-    return NextResponse.json({ ok: true, tempPassword });
+    return NextResponse.json({
+      ok: true,
+      passwordDelivery: {
+        delivered: delivery.delivered,
+        recipient: maskPhone(target.phoneNumber),
+      },
+    });
   }
 
   if (action === 'unlock') {

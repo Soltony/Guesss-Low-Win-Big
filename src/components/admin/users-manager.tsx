@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Copy, KeyRound, Loader2, LockOpen, Pencil, Plus } from 'lucide-react';
+import { AlertTriangle, KeyRound, Loader2, LockOpen, Pencil, Plus, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -58,9 +58,74 @@ export function UsersManager({
   const { toast } = useToast();
   const [form, setForm] = useState<typeof blank | null>(null);
   const [busy, setBusy] = useState(false);
-  const [tempPassword, setTempPassword] = useState<{ email: string; password: string } | null>(
-    null
-  );
+  /**
+   * A one-time password is never returned to this screen — it goes to the
+   * account holder's phone. All we learn is whether the SMS left the building,
+   * and this holds the cases where it did not.
+   */
+  const [deliveryFailure, setDeliveryFailure] = useState<{
+    id: string;
+    name: string;
+    recipient: string;
+  } | null>(null);
+  const [retrying, setRetrying] = useState(false);
+
+  /** Returns whether the password reached its owner, so callers can react to a repeat failure. */
+  const reportDelivery = (
+    account: { id: string; fullName: string },
+    title: string,
+    delivery: { delivered: boolean; recipient: string }
+  ) => {
+    if (delivery.delivered) {
+      toast({ title, description: `One-time password sent by SMS to ${delivery.recipient}.` });
+      setDeliveryFailure(null);
+      return true;
+    }
+    // Why the send failed is a server-side concern: the operator's next move is
+    // the same either way, and the provider's own error text is not something
+    // to put on screen.
+    setDeliveryFailure({ id: account.id, name: account.fullName, recipient: delivery.recipient });
+    return false;
+  };
+
+  /**
+   * Nothing is stored to resend — the password exists only as a hash the moment
+   * it is issued. A retry therefore mints a fresh one-time password and sends
+   * that, which also invalidates whatever the failed attempt generated.
+   */
+  const retryDelivery = async () => {
+    if (!deliveryFailure) return;
+    setRetrying(true);
+    try {
+      const response = await fetch(`/api/admin/users/${deliveryFailure.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reset-password' }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        toast({ variant: 'destructive', title: 'Retry failed', description: data?.error });
+        return;
+      }
+
+      const sent = reportDelivery(
+        { id: deliveryFailure.id, fullName: deliveryFailure.name },
+        'Password sent',
+        data.passwordDelivery
+      );
+      if (!sent) {
+        toast({
+          variant: 'destructive',
+          title: 'Still not delivered',
+          description: 'The SMS did not go out.',
+        });
+      }
+      router.refresh();
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -80,8 +145,12 @@ export function UsersManager({
         return;
       }
 
-      if (data.tempPassword) {
-        setTempPassword({ email: form.email, password: data.tempPassword });
+      if (data.passwordDelivery) {
+        reportDelivery(
+          { id: data.id, fullName: form.fullName },
+          'User created',
+          data.passwordDelivery
+        );
       } else {
         toast({ title: 'User updated' });
       }
@@ -106,8 +175,8 @@ export function UsersManager({
       return;
     }
 
-    if (data.tempPassword) {
-      setTempPassword({ email: user.email, password: data.tempPassword });
+    if (data.passwordDelivery) {
+      reportDelivery(user, 'Password reset', data.passwordDelivery);
     } else {
       toast({ title: 'Done' });
     }
@@ -264,7 +333,8 @@ export function UsersManager({
             <DialogDescription>
               {form?.id
                 ? 'Changing the role takes effect on the next request.'
-                : 'A one-time password is generated and shown once after saving.'}
+                : "A one-time password is generated and sent to the user's phone by SMS." +
+                  ' It is never shown here.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -330,32 +400,51 @@ export function UsersManager({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={tempPassword !== null} onOpenChange={() => setTempPassword(null)}>
+      <Dialog
+        open={deliveryFailure !== null}
+        onOpenChange={(open) => !open && !retrying && setDeliveryFailure(null)}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>One-time password</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-destructive" />
+              Password SMS not delivered
+            </DialogTitle>
             <DialogDescription>
-              Share this with {tempPassword?.email} through a secure channel. It is shown once and
-              must be changed at first sign-in.
+              The one-time password for {deliveryFailure?.name} could not be sent to{' '}
+              {deliveryFailure?.recipient}. The account cannot be signed into until its owner has
+              it.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/50 p-3">
-            <code className="flex-1 font-mono text-sm">{tempPassword?.password}</code>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                navigator.clipboard?.writeText(tempPassword?.password ?? '');
-                toast({ title: 'Copied to clipboard' });
-              }}
-            >
-              <Copy className="h-3.5 w-3.5" />
-            </Button>
-          </div>
+          <p className="rounded-lg border border-border bg-secondary/50 p-3 text-sm text-muted-foreground">
+            {canUpdate
+              ? 'Retrying issues a new one-time password and sends that. ' +
+                ''
+              : '.'}
+          </p>
 
           <DialogFooter>
-            <Button onClick={() => setTempPassword(null)}>Done</Button>
+            <Button
+              variant="outline"
+              onClick={() => setDeliveryFailure(null)}
+              disabled={retrying}
+            >
+              Close
+            </Button>
+            {/* Retry goes through the password-reset endpoint, so an operator
+                who may create accounts but not update them is not offered a
+                button the server would refuse. */}
+            {canUpdate && (
+              <Button onClick={retryDelivery} disabled={retrying}>
+                {retrying ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                )}
+                Retry
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

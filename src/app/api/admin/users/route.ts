@@ -3,7 +3,8 @@ import prisma from '@/lib/prisma';
 import { isGuardFailure, jsonError, readJsonBody, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
 import { generateTempPassword, hashPassword, isValidEmail } from '@/lib/admin-users';
-import { normalizePhone } from '@/lib/format';
+import { maskPhone, normalizePhone } from '@/lib/format';
+import { deliverTempPassword } from '@/lib/temp-password';
 
 export const dynamic = 'force-dynamic';
 
@@ -81,14 +82,41 @@ export async function POST(req: NextRequest) {
     },
   });
 
+  // Straight to the account holder. The response below carries only whether
+  // it arrived, so the operator who created the account never reads it.
+  const delivery = await deliverTempPassword({
+    fullName,
+    phoneNumber,
+    password: tempPassword,
+    purpose: 'CREATED',
+  });
+
   await createAuditLog({
     actorId: actor.id,
     actorName: actor.fullName,
     action: 'USER_CREATED',
     entity: 'User',
     entityId: created.id,
-    details: { fullName, email, phoneNumber, role: role.name },
+    details: {
+      fullName,
+      email,
+      phoneNumber,
+      role: role.name,
+      passwordDelivered: delivery.delivered,
+      deliveryError: delivery.error ?? null,
+    },
   });
 
-  return NextResponse.json({ id: created.id, tempPassword }, { status: 201 });
+  return NextResponse.json(
+    {
+      id: created.id,
+      // Whether it arrived, and nothing else: the reason a send failed is for
+      // the server log and the audit row, not for the operator's screen.
+      passwordDelivery: {
+        delivered: delivery.delivered,
+        recipient: maskPhone(phoneNumber),
+      },
+    },
+    { status: 201 }
+  );
 }
