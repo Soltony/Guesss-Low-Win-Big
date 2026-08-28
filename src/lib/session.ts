@@ -6,8 +6,8 @@ import {
   decryptJwt,
   encryptJwt,
   expiryFromDays,
-  readJwtClaims,
   uuid,
+  verifyJwt,
 } from './jwt';
 import { parsePermissions } from './permissions';
 import type { SessionUser } from './types';
@@ -204,8 +204,16 @@ export async function getAdminSession(options?: {
   const access = store.get(ACCESS_COOKIE)?.value;
   const refresh = store.get(REFRESH_COOKIE)?.value;
 
-  if (access) {
-    const payload = await decryptJwt<AccessPayload>(access);
+  // An access token that fails verification is not an expired one. It was
+  // edited, forged, or signed with another key, and none of those are states a
+  // session recovers from — they end it, exactly as an edited refresh token
+  // does. Checking this before anything else is what stops the renewal path
+  // below from quietly reissuing a good token to replace a tampered one.
+  const checked = access ? await verifyJwt<AccessPayload>(access) : null;
+  if (checked?.status === 'invalid') return null;
+
+  if (checked?.status === 'valid') {
+    const payload = checked.payload;
     if (payload?.userId && payload?.sessionId) {
       const record = await prisma.session.findUnique({ where: { id: payload.sessionId } });
       const valid =
@@ -247,18 +255,19 @@ export async function getAdminSession(options?: {
   // inside it precisely so this check can tell the two cases apart. A request
   // carrying the refresh cookie *alone* is that token being replayed as a
   // credential in its own right, which is the thing being prevented here.
-  if (!access) return null;
+  //
+  // Only an expired token gets this far: `valid` returned above, and `invalid`
+  // was refused outright. So the claims read below carry a signature we issued,
+  // and the binding check that follows is worth something.
+  if (checked?.status !== 'expired') return null;
 
   const record = await prisma.session.findUnique({ where: { refreshToken: refresh } });
   if (!record || record.revoked || record.expiresAt < new Date()) return null;
 
-  // And it must be the access token from this same session. Read unverified,
-  // because an expired signature cannot be checked — which is why it is only
-  // ever compared against the session the refresh token already proved.
-  const presented = readJwtClaims<AccessPayload>(access);
-  if (!presented || presented.sessionId !== record.id || presented.userId !== record.userId) {
-    return null;
-  }
+  // And it must be the access token from this same session, so a token minted
+  // for one session cannot be renewed with another session's refresh cookie.
+  const presented = checked.payload;
+  if (presented.sessionId !== record.id || presented.userId !== record.userId) return null;
 
   const breach = sessionLifetimeBreach(record);
   if (breach) {
