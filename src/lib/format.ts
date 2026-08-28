@@ -50,6 +50,27 @@ export function maskPhone(phone: string | null | undefined) {
   return `${digits.slice(0, 4)}${'*'.repeat(Math.max(0, digits.length - 6))}${digits.slice(-2)}`;
 }
 
+/**
+ * A normalized Ethiopian number: the 251 country code and exactly nine more
+ * digits. Anything shorter is truncated, anything longer is two numbers that
+ * ran together or a country code repeated - neither can be dialled, and
+ * neither should be stored as if it could.
+ */
+export function isValidEthiopianPhone(normalized: string): boolean {
+  return /^251[0-9]{9}$/.test(normalized);
+}
+
+/**
+ * Narrower still: a line an SMS can actually reach. Ethiopian mobile ranges
+ * open 09 (Ethio Telecom) or 07 (Safaricom); everything else in the numbering
+ * plan is a landline. Anywhere a number is the only way to reach a person -
+ * an admin receiving a one-time password, for instance - a landline is not a
+ * usable answer.
+ */
+export function isEthiopianMobile(normalized: string): boolean {
+  return /^251[79][0-9]{8}$/.test(normalized);
+}
+
 /** Normalizes Ethiopian numbers to the 251XXXXXXXXX form used as the bidder key. */
 export function normalizePhone(raw: string): string {
   const digits = String(raw || '').replace(/\D/g, '');
@@ -57,6 +78,29 @@ export function normalizePhone(raw: string): string {
   if (digits.startsWith('0')) return `251${digits.slice(1)}`;
   if (digits.length === 9) return `251${digits}`;
   return digits;
+}
+
+/**
+ * Rejects an entry that is not written as a phone number at all.
+ *
+ * normalizePhone throws away every non-digit, which quietly turns
+ * "0912345678abc" into a well-formed number and stores it as if the operator
+ * had typed one. Text mixed into the field is a mistake to be reported, not
+ * one to be silently repaired.
+ */
+export function looksLikePhoneNumber(raw: string): boolean {
+  return /^[+]?[0-9 ()-]+$/.test(raw.trim());
+}
+
+/**
+ * A raw entry read as an Ethiopian mobile number, or null if it is not one.
+ * The single gate for anywhere a person is reached by SMS.
+ */
+export function parseEthiopianMobile(raw: string): string | null {
+  const trimmed = (raw || '').trim();
+  if (!trimmed || !looksLikePhoneNumber(trimmed)) return null;
+  const normalized = normalizePhone(trimmed);
+  return isEthiopianMobile(normalized) ? normalized : null;
 }
 
 export interface Countdown {

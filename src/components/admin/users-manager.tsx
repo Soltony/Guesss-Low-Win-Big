@@ -32,6 +32,26 @@ interface UserRow {
   locked: boolean;
 }
 
+/** The server names the input its complaint belongs to; this puts it there. */
+function FieldError({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return (
+    <p id={id} className="text-xs font-medium text-destructive">
+      {message}
+    </p>
+  );
+}
+
+/** Marks an input as rejected, for the browser and for the eye. */
+function invalidProps(id: string, message?: string) {
+  if (!message) return {};
+  return {
+    'aria-invalid': true,
+    'aria-describedby': id,
+    className: 'border-destructive focus-visible:ring-destructive',
+  };
+}
+
 const blank = {
   id: '',
   fullName: '',
@@ -58,6 +78,26 @@ export function UsersManager({
   const { toast } = useToast();
   const [form, setForm] = useState<typeof blank | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Server-side rejections, keyed by the input they belong to. */
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof typeof blank, string>>>(
+    {}
+  );
+
+  /** Opening, switching or closing the form drops the errors of the last one. */
+  const openForm = (value: typeof blank | null) => {
+    setForm(value);
+    setFieldErrors({});
+  };
+
+  /** Editing a field withdraws the complaint made about it. */
+  const updateForm = (patch: Partial<typeof blank>) => {
+    setForm((current) => (current ? { ...current, ...patch } : current));
+    setFieldErrors((current) => {
+      const next = { ...current };
+      for (const key of Object.keys(patch)) delete next[key as keyof typeof blank];
+      return next;
+    });
+  };
   /**
    * A one-time password is never returned to this screen — it goes to the
    * account holder's phone. All we learn is whether the SMS left the building,
@@ -131,6 +171,7 @@ export function UsersManager({
     event.preventDefault();
     if (!form) return;
     setBusy(true);
+    setFieldErrors({});
     try {
       const editing = Boolean(form.id);
       const response = await fetch(editing ? `/api/admin/users/${form.id}` : '/api/admin/users', {
@@ -141,7 +182,14 @@ export function UsersManager({
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        toast({ variant: 'destructive', title: 'Save failed', description: data?.error });
+        // A rejection that names a field belongs under that field. Everything
+        // else - a permission refusal, a body that never arrived - has no
+        // input to sit under and stays a toast.
+        if (data?.field && data.field in blank) {
+          setFieldErrors({ [data.field as keyof typeof blank]: String(data.error) });
+        } else {
+          toast({ variant: 'destructive', title: 'Save failed', description: data?.error });
+        }
         return;
       }
 
@@ -155,7 +203,7 @@ export function UsersManager({
         toast({ title: 'User updated' });
       }
 
-      setForm(null);
+      openForm(null);
       router.refresh();
     } finally {
       setBusy(false);
@@ -203,7 +251,7 @@ export function UsersManager({
     <>
       {canCreate && (
         <div className="mb-4">
-          <Button onClick={() => setForm({ ...blank, roleId: roles[0]?.id ?? '' })}>
+          <Button onClick={() => openForm({ ...blank, roleId: roles[0]?.id ?? '' })}>
             <Plus className="mr-1.5 h-4 w-4" />
             Add user
           </Button>
@@ -266,7 +314,7 @@ export function UsersManager({
                         title="Edit"
                         aria-label={`Edit ${user.fullName}`}
                         onClick={() =>
-                          setForm({
+                          openForm({
                             id: user.id,
                             fullName: user.fullName,
                             email: user.email,
@@ -326,7 +374,7 @@ export function UsersManager({
         </table>
       </TableCard>
 
-      <Dialog open={form !== null} onOpenChange={(open) => !open && setForm(null)}>
+      <Dialog open={form !== null} onOpenChange={(open) => !open && openForm(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{form?.id ? 'Edit user' : 'New user'}</DialogTitle>
@@ -346,8 +394,10 @@ export function UsersManager({
                   id="u-name"
                   required
                   value={form.fullName}
-                  onChange={(event) => setForm({ ...form, fullName: event.target.value })}
+                  onChange={(event) => updateForm({ fullName: event.target.value })}
+                  {...invalidProps('u-name-error', fieldErrors.fullName)}
                 />
+                <FieldError id="u-name-error" message={fieldErrors.fullName} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="u-email">Email</Label>
@@ -356,8 +406,10 @@ export function UsersManager({
                   type="email"
                   required
                   value={form.email}
-                  onChange={(event) => setForm({ ...form, email: event.target.value })}
+                  onChange={(event) => updateForm({ email: event.target.value })}
+                  {...invalidProps('u-email-error', fieldErrors.email)}
                 />
+                <FieldError id="u-email-error" message={fieldErrors.email} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="u-phone">Phone number</Label>
@@ -365,9 +417,17 @@ export function UsersManager({
                   id="u-phone"
                   required
                   value={form.phoneNumber}
-                  onChange={(event) => setForm({ ...form, phoneNumber: event.target.value })}
+                  onChange={(event) => updateForm({ phoneNumber: event.target.value })}
                   placeholder="0911223344"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  // Long enough for +251912345678 and not a character more,
+                  // so an over-length entry cannot be typed in the first place.
+                  maxLength={13}
+                  {...invalidProps('u-phone-error', fieldErrors.phoneNumber)}
                 />
+                <FieldError id="u-phone-error" message={fieldErrors.phoneNumber} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="u-role">Role</Label>
@@ -375,8 +435,13 @@ export function UsersManager({
                   id="u-role"
                   required
                   value={form.roleId}
-                  onChange={(event) => setForm({ ...form, roleId: event.target.value })}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  onChange={(event) => updateForm({ roleId: event.target.value })}
+                  aria-invalid={Boolean(fieldErrors.roleId)}
+                  aria-describedby={fieldErrors.roleId ? 'u-role-error' : undefined}
+                  className={
+                    'h-10 w-full rounded-md border bg-background px-3 text-sm ' +
+                    (fieldErrors.roleId ? 'border-destructive' : 'border-input')
+                  }
                 >
                   {roles.map((role) => (
                     <option key={role.id} value={role.id}>
@@ -384,10 +449,11 @@ export function UsersManager({
                     </option>
                   ))}
                 </select>
+                <FieldError id="u-role-error" message={fieldErrors.roleId} />
               </div>
 
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setForm(null)}>
+                <Button type="button" variant="outline" onClick={() => openForm(null)}>
                   Cancel
                 </Button>
                 <Button type="submit" disabled={busy}>

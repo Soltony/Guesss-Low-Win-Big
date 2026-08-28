@@ -1,4 +1,4 @@
-import { normalizePhone } from './format';
+import { isValidEthiopianPhone, normalizePhone } from './format';
 
 /**
  * Parsing for uploaded participant lists.
@@ -63,7 +63,7 @@ const MAX_NOTE_LENGTH = 200;
  * is reported back to the operator instead.
  */
 export function isValidParticipantPhone(normalized: string): boolean {
-  return /^251\d{9}$/.test(normalized);
+  return isValidEthiopianPhone(normalized);
 }
 
 const normalizeHeader = (cell: string) => cell.toLowerCase().replace(/[\s_-]/g, '');

@@ -5,10 +5,12 @@ import { createAuditLog } from '@/lib/audit-log';
 import { generateTempPassword, hashPassword, isValidEmail } from '@/lib/admin-users';
 import { revokeAllUserSessions } from '@/lib/session';
 import { SUPER_ADMIN_ROLE } from '@/lib/permissions';
-import { maskPhone, normalizePhone } from '@/lib/format';
+import { maskPhone, parseEthiopianMobile } from '@/lib/format';
 import { deliverTempPassword } from '@/lib/temp-password';
 
 export const dynamic = 'force-dynamic';
+
+const PHONE_ERROR = 'Enter a valid Ethiopian mobile number, such as 0912345678.';
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const guard = await requirePermission('users', 'update');
@@ -93,33 +95,43 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   if (body.fullName !== undefined) {
     const fullName = String(body.fullName).trim();
-    if (!fullName) return jsonError('Full name cannot be empty.', 400);
+    if (!fullName) return jsonError('Full name cannot be empty.', 400, { field: 'fullName' });
     data.fullName = fullName;
   }
 
   if (body.email !== undefined) {
     const email = String(body.email).trim().toLowerCase();
-    if (!isValidEmail(email)) return jsonError('Enter a valid email address.', 400);
+    if (!isValidEmail(email)) {
+      return jsonError('Enter a valid email address.', 400, { field: 'email' });
+    }
     if (email !== target.email) {
       const clash = await prisma.user.findUnique({ where: { email } });
-      if (clash) return jsonError('An account with this email already exists.', 409);
+      if (clash) {
+        return jsonError('An account with this email already exists.', 409, { field: 'email' });
+      }
       data.email = email;
     }
   }
 
   if (body.phoneNumber !== undefined) {
-    const phoneNumber = normalizePhone(String(body.phoneNumber));
-    if (!phoneNumber || phoneNumber.length < 9) return jsonError('Enter a valid phone number.', 400);
+    const phoneNumber = parseEthiopianMobile(String(body.phoneNumber));
+    if (!phoneNumber) {
+      return jsonError(PHONE_ERROR, 400, { field: 'phoneNumber' });
+    }
     if (phoneNumber !== target.phoneNumber) {
       const clash = await prisma.user.findUnique({ where: { phoneNumber } });
-      if (clash) return jsonError('An account with this phone number already exists.', 409);
+      if (clash) {
+        return jsonError('An account with this phone number already exists.', 409, {
+          field: 'phoneNumber',
+        });
+      }
       data.phoneNumber = phoneNumber;
     }
   }
 
   if (body.roleId !== undefined && body.roleId !== target.roleId) {
     const role = await prisma.role.findUnique({ where: { id: String(body.roleId) } });
-    if (!role) return jsonError('The selected role does not exist.', 404);
+    if (!role) return jsonError('The selected role does not exist.', 404, { field: 'roleId' });
 
     // Removing the last Super Admin would lock everyone out of Access Control.
     if (target.role.name === SUPER_ADMIN_ROLE && role.name !== SUPER_ADMIN_ROLE) {

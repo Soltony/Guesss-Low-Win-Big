@@ -3,10 +3,12 @@ import prisma from '@/lib/prisma';
 import { isGuardFailure, jsonError, readJsonBody, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
 import { generateTempPassword, hashPassword, isValidEmail } from '@/lib/admin-users';
-import { maskPhone, normalizePhone } from '@/lib/format';
+import { maskPhone, parseEthiopianMobile } from '@/lib/format';
 import { deliverTempPassword } from '@/lib/temp-password';
 
 export const dynamic = 'force-dynamic';
+
+const PHONE_ERROR = 'Enter a valid Ethiopian mobile number, such as 0912345678.';
 
 export async function GET() {
   const guard = await requirePermission('users', 'read');
@@ -42,28 +44,37 @@ export async function POST(req: NextRequest) {
   if (body === null) return jsonError('Request body is too large.', 413);
   const fullName = String(body.fullName || '').trim();
   const email = String(body.email || '').trim().toLowerCase();
-  const phoneNumber = normalizePhone(String(body.phoneNumber || ''));
+  const phoneNumber = parseEthiopianMobile(String(body.phoneNumber || ''));
   const roleId = String(body.roleId || '');
 
-  if (!fullName) return jsonError('Full name is required.', 400);
-  if (!isValidEmail(email)) return jsonError('Enter a valid email address.', 400);
-  if (!phoneNumber || phoneNumber.length < 9) return jsonError('Enter a valid phone number.', 400);
-  if (!roleId) return jsonError('A role must be assigned.', 400);
+  // `field` names the input the message belongs to, so the form can show the
+  // complaint where it was made rather than as a detached toast.
+  if (!fullName) return jsonError('Full name is required.', 400, { field: 'fullName' });
+  if (!isValidEmail(email)) {
+    return jsonError('Enter a valid email address.', 400, { field: 'email' });
+  }
+  // An exact format, not a minimum length: the old check took anything from
+  // nine digits upward and stripped whatever was not a digit, so an entry
+  // carrying text was stored as a number that can never be dialled — and this
+  // account is reachable only by SMS.
+  if (!phoneNumber) {
+    return jsonError(PHONE_ERROR, 400, { field: 'phoneNumber' });
+  }
+  if (!roleId) return jsonError('A role must be assigned.', 400, { field: 'roleId' });
 
   const role = await prisma.role.findUnique({ where: { id: roleId } });
-  if (!role) return jsonError('The selected role does not exist.', 404);
+  if (!role) return jsonError('The selected role does not exist.', 404, { field: 'roleId' });
 
   const clash = await prisma.user.findFirst({
     where: { OR: [{ email }, { phoneNumber }] },
     select: { email: true, phoneNumber: true },
   });
   if (clash) {
-    return jsonError(
-      clash.email === email
-        ? 'An account with this email already exists.'
-        : 'An account with this phone number already exists.',
-      409
-    );
+    return clash.email === email
+      ? jsonError('An account with this email already exists.', 409, { field: 'email' })
+      : jsonError('An account with this phone number already exists.', 409, {
+          field: 'phoneNumber',
+        });
   }
 
   // The account starts with a one-time password that must be replaced at first

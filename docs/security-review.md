@@ -335,6 +335,29 @@ Covered by `src/lib/temp-password.test.ts`: the message carries the password, th
 fallback prints it, a thrown transport is treated as a failed send rather than
 rolling back a created account, and the password never survives in a returned error.
 
-### Phone-number length validation (CWE-20, Low)
+### The phone number had no length or format rule (CWE-20, Low)
 
-Not addressed here — see the finding list.
+User creation and editing accepted `phoneNumber.length < 9` as the whole rule — a
+floor with no ceiling, applied after `normalizePhone()` had already stripped every
+non-digit. Two consequences: a number with digits pasted onto the end was stored as
+something that can never be dialled, and an entry like `251900000001sdfghjk` was
+quietly repaired into a well-formed number rather than refused.
+
+The rule now lives in one place, `parseEthiopianMobile()` (`src/lib/format.ts`),
+which returns the storable number or null:
+
+- **The entry is judged before it is cleaned up.** `looksLikePhoneNumber()` rejects
+  anything carrying letters first, because normalization is what hid the mistake.
+- **Exactly nine digits behind the 251 country code** — `isValidEthiopianPhone()`,
+  the rule the bidder import (`isValidParticipantPhone`) already applied, promoted
+  out of `eligibility-list.ts` so both use one definition.
+- **Mobile ranges only** (09 Ethio Telecom, 07 Safaricom). An admin account is
+  reachable only by the SMS carrying its one-time password, so a landline is an
+  account nobody can ever sign into.
+
+The message names the `phoneNumber` field, so it appears under the input. The input
+itself is `type="tel"` with `maxLength={13}` — room for `+251912345678` and not a
+character more, so the over-length case cannot be typed at all.
+
+Covered by `src/lib/format.test.ts`, including the reported entry and the
+normalization step that used to swallow it.
