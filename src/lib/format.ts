@@ -81,6 +81,21 @@ export function normalizePhone(raw: string): string {
 }
 
 /**
+ * The 251XXXXXXXXX form back to the 0XXXXXXXXX one the SMS gateway addresses
+ * subscribers by. Storage keeps the country code - it is the bidder key, and
+ * the only form that reads the same whatever wrote it - so the local form is
+ * produced at the transport boundary and nowhere else.
+ *
+ * A number that is not Ethiopian is handed on untouched rather than guessed
+ * at: dropping a leading 251 that is not a country code would misdial it.
+ */
+export function toLocalPhone(raw: string): string {
+  const normalized = normalizePhone(raw);
+  if (!isValidEthiopianPhone(normalized)) return String(raw || '').trim();
+  return `0${normalized.slice(3)}`;
+}
+
+/**
  * Rejects an entry that is not written as a phone number at all.
  *
  * normalizePhone throws away every non-digit, which quietly turns

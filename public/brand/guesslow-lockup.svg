@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 152 40" width="152" height="40" role="img" aria-label="GuessLow">
+  <title>GuessLow</title>
+  <g transform="translate(0 4)">
+    <rect width="32" height="32" rx="8" fill="#E7AF08"/>
+    <g fill="#0C1222">
+      <rect x="6.5" y="6.8" width="19" height="3.2" rx="1.6" opacity="0.35"/>
+      <rect x="10" y="12.2" width="12" height="3.2" rx="1.6" opacity="0.6"/>
+      <rect x="13.5" y="17.6" width="5" height="3.2" rx="1.6"/>
+      <circle cx="16" cy="24.6" r="2.3"/>
+    </g>
+  </g>
+  <text x="42" y="27" font-family="Inter, 'Segoe UI', system-ui, -apple-system, sans-serif" font-size="22" font-weight="600" letter-spacing="-0.6" fill="#0C1222">Guess<tspan fill="#E7AF08">Low</tspan></text>
+</svg>

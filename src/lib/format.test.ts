@@ -5,6 +5,7 @@ import {
   looksLikePhoneNumber,
   normalizePhone,
   parseEthiopianMobile,
+  toLocalPhone,
 } from './format';
 
 describe('normalizePhone', () => {
@@ -70,5 +71,26 @@ describe('parseEthiopianMobile', () => {
     expect(parseEthiopianMobile('251912345678912345')).toBeNull();
     expect(parseEthiopianMobile('0111234567')).toBeNull();
     expect(parseEthiopianMobile('')).toBeNull();
+  });
+});
+
+describe('toLocalPhone', () => {
+  it('hands the SMS gateway the 0XXXXXXXXX form it accepts', () => {
+    expect(toLocalPhone('251912345678')).toBe('0912345678');
+    expect(toLocalPhone('251712345678')).toBe('0712345678');
+  });
+
+  it('reaches the same local form whichever way the number was written', () => {
+    expect(toLocalPhone('+251 912 345 678')).toBe('0912345678');
+    expect(toLocalPhone('0912345678')).toBe('0912345678');
+    expect(toLocalPhone('912345678')).toBe('0912345678');
+  });
+
+  it('leaves a number it does not recognise alone rather than misdialling it', () => {
+    // Trimming a leading 251 off something that is not a country code would
+    // send the message to a different subscriber, so nothing is trimmed.
+    expect(toLocalPhone('447700900123')).toBe('447700900123');
+    expect(toLocalPhone('25191234')).toBe('25191234');
+    expect(toLocalPhone('')).toBe('');
   });
 });
