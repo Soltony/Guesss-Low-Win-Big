@@ -25,3 +25,8 @@ next-env.d.ts
 # Uploaded artwork (served from /uploads)
 /public/uploads/*
 !/public/uploads/.gitkeep
+
+# Load-test output and local config
+/perf/reports/out/*
+!/perf/reports/out/.gitkeep
+/perf/.env
