@@ -2,6 +2,7 @@ import prisma from './prisma';
 import {
   autoSettleDueAuctions,
   expireStalePendingBids,
+  refreshLiveAuctionCounters,
   syncAuctionLifecycle,
 } from './auction-engine';
 import { getSettings } from './settings';
@@ -42,6 +43,8 @@ export interface MaintenanceSummary {
   reauctionsPending: number;
   winnersNotified: number;
   endingSoonNotified: number;
+  /** Live auctions whose displayed bid/bidder counts were recomputed. */
+  countersRefreshed: number;
   durationMs: number;
 }
 
@@ -65,6 +68,11 @@ export async function runMaintenance(
   const lifecycle = await syncAuctionLifecycle();
   const expired = await expireStalePendingBids();
   const settlements = await autoSettleDueAuctions();
+  // Bidding no longer maintains the auction counters — one shared row per bid
+  // was the throughput ceiling — so they are recomputed here instead. After
+  // settlement, so an auction that just settled keeps the exact figures
+  // settlement wrote rather than having them recounted a second time.
+  const countersRefreshed = await refreshLiveAuctionCounters();
 
   const settings = await getSettings();
   let winnersNotified = 0;
@@ -114,6 +122,7 @@ export async function runMaintenance(
     reauctionsPending: settlements.filter((s) => s.reauctionState === 'PENDING').length,
     winnersNotified,
     endingSoonNotified,
+    countersRefreshed,
     durationMs: Date.now() - startedAt,
   };
 

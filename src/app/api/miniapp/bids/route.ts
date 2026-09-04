@@ -3,7 +3,7 @@ import prisma from '@/lib/prisma';
 import { getBidderSession } from '@/lib/session';
 import { clientMeta, jsonError, readJsonBody, tooManyRequests } from '@/lib/api';
 import { consumeRateLimit } from '@/lib/rate-limit';
-import { BidRejected, placeBid } from '@/lib/bidding';
+import { BidRejected, isValidRequestId, placeBid } from '@/lib/bidding';
 import { isRevealAllowed } from '@/lib/auction-engine';
 import { tryDecryptBidAmount } from '@/lib/bid-crypto';
 import { toNum } from '@/lib/format';
@@ -99,6 +99,17 @@ export async function POST(req: NextRequest) {
   const auctionId = String(body?.auctionId || '');
   const amount = Number(body?.amount);
 
+  // The client's idempotency key for this attempt. Optional — an older webview
+  // that does not send one simply loses the protection — but when it is sent it
+  // is stored, so it is constrained to a short, boring string rather than taken
+  // as given: it must fit the column, and it must not be a place to smuggle
+  // anything into a row that is read back later.
+  const rawRequestId = String(body?.requestId ?? '').trim();
+  if (rawRequestId && !isValidRequestId(rawRequestId)) {
+    return jsonError('Invalid request identifier.', 400, { code: 'INVALID_REQUEST_ID' });
+  }
+  const requestId = rawRequestId || undefined;
+
   if (!auctionId) return jsonError('Auction is required.', 400);
   if (!Number.isFinite(amount)) return jsonError('Enter a valid bid amount.', 400);
   // The bid form asks for this on every bid; the rule is repeated here so no
@@ -133,6 +144,7 @@ export async function POST(req: NextRequest) {
       amount,
       superAppToken: session.superAppToken,
       isTest: session.isTest,
+      requestId,
       ipAddress: meta.ipAddress,
       userAgent: meta.userAgent,
     });

@@ -7,6 +7,7 @@ import { toNum } from './format';
 import type { SettingsMap } from './settings';
 import type { ReauctionConfig } from './reauction-rules';
 import type { ReauctionState, SettlementActor } from './types';
+import type { TxClient } from './db-lock';
 
 /**
  * Re-auction rules.
@@ -197,9 +198,18 @@ export async function carriedBidsByAuction(
  * The conditional `remaining > 0` makes this a single atomic UPDATE, so two
  * bids racing each other can never spend the same credit and slip a free bid
  * through — which would be the platform paying the fee, not the bidder.
+ *
+ * `client` lets the caller spend the credit inside its own transaction, which
+ * is how `placeBid` uses it: if the bid that credit was funding then fails to
+ * record, the rollback hands the credit back with it and there is no
+ * compensating write left to get wrong.
  */
-export async function claimBidCredit(bidderId: string, auctionId: string): Promise<boolean> {
-  const claimed = await prisma.bidCredit.updateMany({
+export async function claimBidCredit(
+  bidderId: string,
+  auctionId: string,
+  client: TxClient = prisma
+): Promise<boolean> {
+  const claimed = await client.bidCredit.updateMany({
     where: { bidderId, auctionId, remaining: { gt: 0 } },
     data: { remaining: { decrement: 1 }, consumed: { increment: 1 } },
   });
@@ -207,8 +217,12 @@ export async function claimBidCredit(bidderId: string, auctionId: string): Promi
 }
 
 /** Hands a spent credit back when the bid it funded never counted. */
-export async function releaseBidCredit(bidderId: string, auctionId: string): Promise<void> {
-  await prisma.bidCredit.updateMany({
+export async function releaseBidCredit(
+  bidderId: string,
+  auctionId: string,
+  client: TxClient = prisma
+): Promise<void> {
+  await client.bidCredit.updateMany({
     where: { bidderId, auctionId, consumed: { gt: 0 } },
     data: { remaining: { increment: 1 }, consumed: { decrement: 1 } },
   });

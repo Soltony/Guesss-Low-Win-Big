@@ -6,6 +6,7 @@ import { getCurrentUser } from '@/lib/session';
 import { hasPermission } from '@/lib/permissions';
 import { getSettings } from '@/lib/settings';
 import { reauctionDefaults } from '@/lib/reauction';
+import { auctionHasBids } from '@/lib/auction-engine';
 import { toNum } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -25,7 +26,7 @@ export default async function EditAuctionPage({
   if (!hasPermission(user, 'auctions', 'update')) redirect('/admin/no-access');
 
   const { id } = await params;
-  const [auction, items, terms, settings] = await Promise.all([
+  const [auction, items, terms, settings, hasBids] = await Promise.all([
     prisma.auction.findUnique({ where: { id } }),
     prisma.item.findMany({
       where: { status: 'ACTIVE' },
@@ -42,6 +43,11 @@ export default async function EditAuctionPage({
       select: { id: true, title: true, version: true, active: true },
     }),
     getSettings(),
+    // The same question the update endpoint asks, asked the same way, so the
+    // screen never offers a field the API will refuse. `Auction.bidCount` is a
+    // display figure refreshed by the maintenance pass, and on a live auction
+    // it lags — long enough to show "no bids yet" over an auction that has them.
+    auctionHasBids(id),
   ]);
 
   if (!auction) notFound();
@@ -59,14 +65,14 @@ export default async function EditAuctionPage({
           { label: 'Edit' },
         ]}
         description={
-          auction.bidCount > 0
+          hasBids
             ? 'Bids have been placed, so the money rules and schedule are locked.'
             : 'No bids yet — every field can still be changed.'
         }
       />
       <AuctionForm
         mode="edit"
-        economicsLocked={auction.bidCount > 0}
+        economicsLocked={hasBids}
         items={items.map((item) => ({
           id: item.id,
           name: item.name,

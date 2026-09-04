@@ -18,6 +18,17 @@ import type { AuctionStatus, ReauctionState, SettlementActor } from './types';
  *   1.00 ×2, 2.00 ×1, 3.00 ×2, 4.00 ×1  →  unique = {2.00, 4.00}  →  winner bids 2.00
  */
 
+/**
+ * How many bid ids may be named in one statement.
+ *
+ * SQL Server refuses a statement carrying more than 2,100 parameters, and an
+ * `IN (…)` list spends one per id. Half of that leaves room for the rest of the
+ * statement while keeping the round trips few: an auction with ten thousand
+ * unique bids costs ten updates rather than fifty. `publishBidLedger` chunks
+ * its inserts against the same limit.
+ */
+const ID_CHUNK = 1_000;
+
 export interface RankedBid {
   bidId: string;
   bidderId: string;
@@ -302,20 +313,18 @@ export async function settleAuction(
       where: { auctionId, status: 'ACTIVE' },
       data: { isUnique: false, rankAtSettlement: null },
     });
-    if (uniqueBidIds.size > 0) {
+    // Chunked, because a wide auction has more unique bids than one statement
+    // can name. Naming them all at once threw on any auction with more than
+    // about two thousand — and threw *inside* this transaction, so the auction
+    // came out of settlement with no winner, no ledger and no result at all,
+    // which is a worse outcome than a slow one. A load test settling an auction
+    // of 19,814 bids failed here after two and a half minutes of work.
+    const uniqueIds = Array.from(uniqueBidIds);
+    for (let index = 0; index < uniqueIds.length; index += ID_CHUNK) {
       await tx.bid.updateMany({
-        where: { id: { in: Array.from(uniqueBidIds) } },
+        where: { id: { in: uniqueIds.slice(index, index + ID_CHUNK) } },
         data: { isUnique: true },
       });
-      // Only the retained ranks are written back. Stamping a rank on every
-      // unique bid would be thousands of round-trips inside one transaction,
-      // and would hand each bidder the full ordering of the bid space.
-      for (const ranked of keep) {
-        await tx.bid.update({
-          where: { id: ranked.bidId },
-          data: { rankAtSettlement: ranked.rank },
-        });
-      }
     }
 
     if (keep.length > 0) {
@@ -358,12 +367,44 @@ export async function settleAuction(
         settledAt: new Date(),
         settledById: actor.id === 'SYSTEM' ? null : actor.id,
         winnerBidId: winner?.bidId ?? null,
+        // The final, exact counters. Bidding maintains them lazily so that no
+        // bidder waits on another to increment a shared row, which leaves them
+        // up to one maintenance pass behind; settlement is where they stop
+        // moving, and the numbers are free here because the bids they count
+        // have already been loaded and opened.
+        bidCount: activeBids.length,
+        bidderCount: new Set(opened.map((bid) => bid.bidderId)).size,
         ...(lineageSettled
           ? {}
           : { reauctionState: decision.state, reauctionReason: decision.reason }),
       },
     });
   });
+
+  // Stamping the retained ranks back onto the bids is outside the transaction
+  // for the same reason the ledger is: it is one round trip per rank, held open
+  // inside a transaction that has already decided the result, writing something
+  // derived from the AuctionResult rows the transaction just committed — and it
+  // is those rows, not this column, that `promoteRunnerUp` reads. All
+  // `Bid.rankAtSettlement` feeds is the "#2" shown beside a bidder's own bid,
+  // so a failure here costs a label rather than a result, and a re-settle
+  // restores it.
+  //
+  // Only the retained ranks are written. Stamping a rank on every unique bid
+  // would be thousands of writes, and would hand each bidder the full ordering
+  // of the bid space.
+  let ranksStamped = 0;
+  for (const ranked of keep) {
+    try {
+      await prisma.bid.update({
+        where: { id: ranked.bidId },
+        data: { rankAtSettlement: ranked.rank },
+      });
+      ranksStamped += 1;
+    } catch (error) {
+      console.error('[auction-engine] bid rank not stamped', ranked.bidId, error);
+    }
+  }
 
   // Publishing the ledger is deliberately outside the transaction: a wide bid
   // space is thousands of rows, and the result must not hinge on how long they
@@ -399,6 +440,7 @@ export async function settleAuction(
       // ledger itself is the record, this is only whether it got written.
       ledgerAmounts: ledger.length,
       ledgerPublished,
+      ranksStamped,
       reauctionState: lineageSettled ? 'CREATED' : decision.state,
       reauctionReason: lineageSettled ? undefined : decision.reason,
     },
@@ -588,21 +630,71 @@ export async function flagForReauction(
 
 /** Recomputes the denormalized bid counters on an auction. */
 export async function refreshAuctionCounters(auctionId: string) {
-  const [bidCount, bidders] = await Promise.all([
-    prisma.bid.count({ where: { auctionId, status: 'ACTIVE' } }),
-    prisma.bid.findMany({
-      where: { auctionId, status: 'ACTIVE' },
-      select: { bidderId: true },
-      distinct: ['bidderId'],
-    }),
-  ]);
+  // One aggregate, served by the (auctionId, status) index. The previous
+  // version asked Prisma for `distinct: ['bidderId']`, which it applies after
+  // fetching — so counting the bidders on a busy auction meant pulling every
+  // ACTIVE bid across the wire to discard nearly all of them.
+  const rows = await prisma.$queryRaw<{ bidCount: number; bidderCount: number }[]>`
+    SELECT COUNT(*) AS bidCount, COUNT(DISTINCT [bidderId]) AS bidderCount
+    FROM [Bid] WHERE [auctionId] = ${auctionId} AND [status] = 'ACTIVE'`;
+
+  const bidCount = Number(rows[0]?.bidCount ?? 0);
+  const bidderCount = Number(rows[0]?.bidderCount ?? 0);
 
   await prisma.auction.update({
     where: { id: auctionId },
-    data: { bidCount, bidderCount: bidders.length },
+    data: { bidCount, bidderCount },
   });
 
-  return { bidCount, bidderCount: bidders.length };
+  return { bidCount, bidderCount };
+}
+
+/**
+ * Whether an auction already holds bids that a change to its money rules would
+ * re-price.
+ *
+ * Asked of the bids rather than read from `Auction.bidCount`. That column is a
+ * display figure, refreshed once a maintenance pass, so on a live auction it
+ * can be a pass behind — long enough for the first bids to arrive while an
+ * admin still has the economics unlocked. Bids awaiting payment count as well:
+ * one that confirms after the fee moved would have been charged under a rule it
+ * was never placed against.
+ */
+export async function auctionHasBids(auctionId: string): Promise<boolean> {
+  const bid = await prisma.bid.findFirst({
+    where: { auctionId, status: { in: ['ACTIVE', 'PENDING_PAYMENT'] } },
+    select: { id: true },
+  });
+  return bid !== null;
+}
+
+/**
+ * Brings every live auction's displayed counters up to date.
+ *
+ * Bidding deliberately does not maintain these — see the note in `confirmBid`;
+ * incrementing one shared row per bid was the platform's throughput ceiling.
+ * Recomputing them here instead costs one indexed aggregate per live auction
+ * per maintenance pass, so the figure a bidder sees is at most a pass old, and
+ * no bidder ever waits behind another to produce it.
+ */
+export async function refreshLiveAuctionCounters(): Promise<number> {
+  const live = await prisma.auction.findMany({
+    where: { status: 'LIVE' },
+    select: { id: true },
+  });
+
+  let refreshed = 0;
+  for (const auction of live) {
+    try {
+      await refreshAuctionCounters(auction.id);
+      refreshed += 1;
+    } catch (error) {
+      // One auction failing to recount must not stop the others, and must not
+      // stop the rest of the maintenance pass: these are display figures.
+      console.error('[auction-engine] counter refresh failed', auction.id, error);
+    }
+  }
+  return refreshed;
 }
 
 /** Whether a bidder may currently see the unique/taken status of their own bids. */

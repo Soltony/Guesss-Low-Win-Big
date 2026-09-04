@@ -125,6 +125,34 @@ export function BidPanel({
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const amountRef = useRef<HTMLInputElement>(null);
   const statusRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * The idempotency key for the bid currently being attempted, held against the
+   * amount it belongs to.
+   *
+   * A bid can be recorded and still look like it failed — the request times
+   * out, or the webview loses the connection while the server is committing.
+   * Tapping "place bid" again then places a *second* bid for a fee the bidder
+   * thought they had not paid. Reusing the key means the server recognises the
+   * retry and hands back the bid it already has.
+   *
+   * Keyed on the amount so it protects a retry without ever suppressing a
+   * genuine second bid: change the amount and the attempt is a new one.
+   */
+  const attempt = useRef<{ amount: number; id: string } | null>(null);
+
+  const attemptIdFor = (value: number): string => {
+    if (attempt.current?.amount === value) return attempt.current.id;
+    const id =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID().replace(/-/g, '')
+        : // Some older webviews expose no randomUUID. The key only has to be
+          // unique among one bidder's attempts on one auction, so this is
+          // enough — and a repeat would at worst replay their own last bid.
+          `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+    attempt.current = { amount: value, id };
+    return id;
+  };
   // Several cards can have their form open at once, so the field needs an id
   // of its own rather than a shared literal.
   const amountId = useId();
@@ -207,6 +235,8 @@ export function BidPanel({
             // two places before it stores the bid.
             setRegisteredAmount(typeof data.amount === 'number' ? data.amount : bidAmount);
             setAmount('');
+            // Settled: the next bid is a new intent and must not replay this one.
+            attempt.current = null;
             router.refresh();
           } else if (data.status === 'FAILED' || data.status === 'VOID') {
             clearInterval(pollTimer.current!);
@@ -285,7 +315,12 @@ export function BidPanel({
       const response = await fetch('/api/miniapp/bids', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ auctionId: auction.id, amount: value, acceptedTerms: true }),
+        body: JSON.stringify({
+          auctionId: auction.id,
+          amount: value,
+          acceptedTerms: true,
+          requestId: attemptIdFor(value),
+        }),
       });
       const data = await response.json();
 
@@ -308,7 +343,20 @@ export function BidPanel({
         );
         setRegisteredAmount(typeof data.amount === 'number' ? data.amount : value);
         setAmount('');
+        // Settled: the next bid is a new intent and must not replay this one.
+        attempt.current = null;
         router.refresh();
+        return;
+      }
+
+      // A retry the server recognised: the bid already exists and the fee was
+      // already asked for on the first attempt, so there is no new token and
+      // nothing to hand the wallet. Watch the bid that is there instead of
+      // reporting a wallet failure for a payment that may be halfway done.
+      if (data.replayed) {
+        setPhase('awaiting-payment');
+        setMessage('This bid was already registered — waiting on the payment confirmation.');
+        pollBidStatus(data.bidId, value);
         return;
       }
 

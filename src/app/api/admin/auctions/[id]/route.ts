@@ -5,6 +5,7 @@ import { createAuditLog } from '@/lib/audit-log';
 import { diffFields } from '@/lib/approvals';
 import { REAUCTION_FIELDS, parseReauctionConfig } from '@/lib/reauction';
 import { participantCount } from '@/lib/eligibility';
+import { auctionHasBids } from '@/lib/auction-engine';
 import { ELIGIBILITY_MODES, type EligibilityMode } from '@/lib/types';
 import { round2, toNum } from '@/lib/format';
 
@@ -70,7 +71,7 @@ export async function PATCH(
 
   const body = await readJsonBody(req);
   if (body instanceof NextResponse) return body;
-  const hasBids = auction.bidCount > 0;
+  const hasBids = await auctionHasBids(id);
 
   const data: Record<string, unknown> = {};
   const previous: Record<string, unknown> = {};

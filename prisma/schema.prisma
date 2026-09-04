@@ -419,6 +419,19 @@ model Bid {
   isUnique         Boolean?
   rankAtSettlement Int?
 
+  // Idempotency. The client sends one id per bid it is trying to place and
+  // reuses it when retrying, so a request that was recorded but whose response
+  // never arrived is returned again instead of placing a second bid. Under load
+  // that is not rare: a fifteen-minute run at 1,000 bidders left 751 bids
+  // stored that the bidder had been told failed.
+  //
+  // Deliberately indexed rather than unique. SQL Server permits only one NULL
+  // per unique index, so every bid placed without a key — an older client, an
+  // admin-entered bid — would collide with the last one; and the lookup is
+  // already serialised by the (auction, bidder) application lock, which is what
+  // makes check-then-insert safe here.
+  requestId   String?   @db.NVarChar(64)
+
   ipAddress   String?
   userAgent   String?   @db.NVarChar(1000)
   createdAt   DateTime  @default(now())
@@ -433,6 +446,7 @@ model Bid {
   @@index([auctionId, status])
   @@index([bidderId, auctionId])
   @@index([createdAt])
+  @@index([bidderId, auctionId, requestId])
 }
 
 // Bids a bidder already paid for in an earlier round, spendable on one
