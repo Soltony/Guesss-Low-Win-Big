@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -24,7 +24,12 @@ import {
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useLanguage } from './language-provider';
-import { round2 } from '@/lib/format';
+import {
+  bidAmountDecimals,
+  bidAmountPattern,
+  checkBidAmount,
+  snapBidAmount,
+} from '@/lib/bid-amount';
 import type { PublicAuction, PublicTerms } from '@/lib/miniapp-data';
 
 type Phase = 'idle' | 'submitting' | 'awaiting-payment' | 'confirmed' | 'failed';
@@ -161,6 +166,7 @@ export function BidPanel({
   // Several cards can have their form open at once, so the field needs an id
   // of its own rather than a shared literal.
   const amountId = useId();
+  const hintId = `${amountId}-hint`;
 
   /** Inline sits inside a list card, so it trims to the essentials. */
   const compact = variant === 'inline';
@@ -172,6 +178,12 @@ export function BidPanel({
   /** Label cell in the confirmation dialog's bid summary. */
   const summaryLabel = 'flex shrink-0 items-center gap-2 text-xs font-medium text-muted-foreground';
   const currency = auction.currency === 'ETB' ? 'Br' : auction.currency;
+  /** The auction's own range and increment, as both the field and the server read them. */
+  const rules = { min: auction.minBidAmount, max: auction.maxBidAmount, step: auction.bidStep };
+  const decimals = bidAmountDecimals(auction.bidStep);
+  const pattern = bidAmountPattern(auction.bidStep);
+  /** Live verdict on what is typed, for the hint under the field. */
+  const typed = amount === '' ? null : checkBidAmount(amount, { ...rules, currency });
   const remaining = Math.max(0, auction.maxBidsPerUser - bidsUsed);
   const isLive = auction.status === 'LIVE';
   const busy = phase === 'submitting' || phase === 'awaiting-payment';
@@ -210,9 +222,30 @@ export function BidPanel({
   const step = (direction: 1 | -1) => {
     const current = Number(amount);
     const base = Number.isFinite(current) && amount !== '' ? current : auction.minBidAmount;
-    const next = round2(base + direction * auction.bidStep);
-    const clamped = Math.min(auction.maxBidAmount, Math.max(auction.minBidAmount, next));
-    setAmount(clamped.toFixed(2));
+    // Snapped rather than simply added, so stepping away from an amount that is
+    // already off the grid lands back on it instead of carrying the offset.
+    setAmount(snapBidAmount(base + direction * auction.bidStep, rules).toFixed(decimals));
+  };
+
+  /**
+   * The increment decides how fine a number may be typed at all: with a step of
+   * 0.01 the third decimal is simply not accepted. Rejecting the keystroke is
+   * what makes the rule visible — the alternative is a field that takes
+   * 1.099955 happily and only argues about it after the terms have been read.
+   */
+  const changeAmount = (event: ChangeEvent<HTMLInputElement>) => {
+    const next = event.target.value;
+    // A number field reports anything it cannot parse — "1.2.3", a stray "e" —
+    // as an empty string, which would otherwise read as the bidder clearing the
+    // field and wipe an amount they had already typed.
+    const unparseable = next === '' && event.target.validity.badInput;
+    if (!unparseable && (next === '' || pattern.test(next))) {
+      setAmount(next);
+      return;
+    }
+    // State did not change, so React will not re-render the input; the typed
+    // character has to be taken back out of the DOM by hand.
+    event.target.value = amount;
   };
 
   const pollBidStatus = useCallback(
@@ -297,9 +330,14 @@ export function BidPanel({
       return;
     }
 
-    const value = Number(amount);
-    if (!amount || !Number.isFinite(value)) {
-      setMessage('Enter a bid amount.');
+    // The range and the increment are the server's rules, checked here against
+    // the same module so the bidder hears about a bad amount now rather than
+    // after accepting terms — and hears it in the same words either way.
+    const checked = checkBidAmount(amount, { ...rules, currency });
+    if (!checked.ok) {
+      setMessage(
+        checked.code === 'INVALID_AMOUNT' && !amount ? 'Enter a bid amount.' : checked.message
+      );
       setPhase('failed');
       // Send them straight to the field. A note under the button reads as an
       // error about the button, and leaves the empty input to be hunted for.
@@ -389,10 +427,17 @@ export function BidPanel({
 
   const confirmAndSubmit = () => {
     if (!accepted) return;
-    const value = Number(amount);
-    if (!Number.isFinite(value)) return;
+    // Re-checked rather than re-parsed: the field is still editable behind the
+    // dialog, so what is sent has to be legal at the moment it is sent.
+    const checked = checkBidAmount(amount, { ...rules, currency });
+    if (!checked.ok) {
+      setConfirmOpen(false);
+      setMessage(checked.message);
+      setPhase('failed');
+      return;
+    }
     setConfirmOpen(false);
-    void submit(value);
+    void submit(checked.amount);
   };
 
   const termsBody = terms
@@ -517,15 +562,20 @@ export function BidPanel({
               type="number"
               inputMode="decimal"
               value={amount}
-              onChange={(event) => setAmount(event.target.value)}
+              onChange={changeAmount}
               disabled={disabled}
-              placeholder="0.00"
+              placeholder={(0).toFixed(decimals)}
               aria-label={t('auction.bidAmount')}
               min={auction.minBidAmount}
               max={auction.maxBidAmount}
               step={auction.bidStep}
+              aria-invalid={typed?.ok === false}
+              aria-describedby={hintId}
               className={cn(
-                'w-full rounded-xl border-2 border-input bg-background px-3 pr-12 text-center font-extrabold tabular-nums outline-none transition-colors focus:border-primary disabled:opacity-60',
+                'w-full rounded-xl border-2 bg-background px-3 pr-12 text-center font-extrabold tabular-nums outline-none transition-colors disabled:opacity-60',
+                typed?.ok === false
+                  ? 'border-destructive focus:border-destructive'
+                  : 'border-input focus:border-primary',
                 compact ? 'h-12 text-2xl' : 'h-16 text-3xl'
               )}
             />
@@ -548,14 +598,19 @@ export function BidPanel({
           </button>
         </div>
 
+        {/* Doubles as the field's error: the rule and the complaint about
+            breaking it are the same sentence, so it is read in one place. */}
         <p
+          id={hintId}
           className={cn(
-            'text-center text-muted-foreground',
+            'text-center',
+            typed?.ok === false ? 'font-semibold text-destructive' : 'text-muted-foreground',
             compact ? 'mt-2 text-[11px]' : 'mt-2.5 text-xs'
           )}
         >
-          {auction.minBidAmount.toFixed(2)} – {auction.maxBidAmount.toFixed(2)} {currency}, in steps
-          of {auction.bidStep.toFixed(2)}
+          {typed?.ok === false
+            ? typed.message
+            : `${auction.minBidAmount.toFixed(2)} – ${auction.maxBidAmount.toFixed(2)} ${currency}, in steps of ${auction.bidStep.toFixed(2)}`}
         </p>
 
         <button

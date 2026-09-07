@@ -1,7 +1,7 @@
 import prisma from './prisma';
 import { getSettings } from './settings';
 import { createAuditLog } from './audit-log';
-import { round2, toNum } from './format';
+import { toNum } from './format';
 import { derivedStatus } from './auction-engine';
 import {
   carriedBidsRemaining as remainingCredits,
@@ -14,6 +14,7 @@ import { PaymentError, initiateBidFeePayment } from './payment-gateway';
 import { BidAmountCipherError, decryptBidAmount, encryptBidAmount } from './bid-crypto';
 import { AppLockError, acquireAppLock, bidderAuctionLock, type TxClient } from './db-lock';
 import { applyTax, taxConfigFrom } from './tax';
+import { checkBidAmount } from './bid-amount';
 
 export class BidRejected extends Error {
   status: number;
@@ -206,29 +207,18 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
   }
 
   // ---- Amount validation ----
-  const amount = round2(Number(input.amount));
-  const min = toNum(auction.minBidAmount);
-  const max = toNum(auction.maxBidAmount);
-  const step = toNum(auction.bidStep) || 0.01;
-
-  if (!Number.isFinite(amount) || amount <= 0) {
-    throw new BidRejected('Enter a valid bid amount.', 'INVALID_AMOUNT');
-  }
-  if (amount < min || amount > max) {
-    throw new BidRejected(
-      `Bid amount must be between ${min.toFixed(2)} and ${max.toFixed(2)} ${auction.currency}.`,
-      'OUT_OF_RANGE'
-    );
-  }
-  // Compare in integer minor units so 0.1 + 0.2 style drift cannot reject a valid bid.
-  const stepMinor = Math.round(step * 100);
-  const offsetMinor = Math.round(amount * 100) - Math.round(min * 100);
-  if (stepMinor > 0 && offsetMinor % stepMinor !== 0) {
-    throw new BidRejected(
-      `Bid amount must be in increments of ${step.toFixed(2)} starting from ${min.toFixed(2)}.`,
-      'INVALID_STEP'
-    );
-  }
+  // Shared with the mini app's bid field (see bid-amount.ts) so the field and
+  // this check can never disagree. The amount is judged as typed — rounding it
+  // onto the grid first would make the increment unenforceable at 0.01 and
+  // would enter the bidder at an amount they did not choose.
+  const checked = checkBidAmount(input.amount, {
+    min: toNum(auction.minBidAmount),
+    max: toNum(auction.maxBidAmount),
+    step: toNum(auction.bidStep) || 0.01,
+    currency: auction.currency,
+  });
+  if (!checked.ok) throw new BidRejected(checked.message, checked.code);
+  const amount = checked.amount;
 
   // ---- Re-auction participation ----
   // Who a re-run is open to is fixed when the round is created; a bidder the
