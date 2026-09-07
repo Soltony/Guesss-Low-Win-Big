@@ -67,6 +67,12 @@ export async function GET(req: NextRequest) {
         bidderId: session.bidderId,
       }),
       feeAmount: toNum(bid.feeAmount),
+      // The tax already inside `feeAmount`, as it stood when this bid was
+      // charged. Read from the row rather than from today's rate: a bidder
+      // looking back at a bid is owed the receipt they were actually given.
+      feeTax: toNum(bid.feeTax),
+      feeNet: toNum(bid.feeNet),
+      feeTaxRate: toNum(bid.feeTaxRate),
       carriedOver: bid.carriedOver,
       status: bid.status,
       sequence: bid.sequence,

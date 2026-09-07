@@ -404,7 +404,21 @@ model Bid {
 
   // The service fee, which is not secret: it is the same for every bid on an
   // auction, appears on the payment receipt, and is summed for revenue reports.
+  // This is the gross the bidder was charged; `feeNet` and `feeTax` are the two
+  // halves it was split into, and they always add back up to it exactly.
   feeAmount Decimal @db.Decimal(18, 2)
+
+  // Inclusive tax on the fee above. The bidder pays `feeAmount` either way —
+  // switching tax on moves the line between what the platform keeps and what it
+  // owes, it does not raise the charge. Both shares are stored rather than
+  // derived at read time because `feeTaxRate` changes when the statutory rate
+  // does, and a report of last quarter must stay computed at last quarter's
+  // rate. A zero-fee bid — carried over from an earlier round, or placed in
+  // pilot mode — carries no tax and never reaches the tax ledger.
+  // See src/lib/tax.ts.
+  feeNet     Decimal @default(0) @db.Decimal(18, 2)
+  feeTax     Decimal @default(0) @db.Decimal(18, 2)
+  feeTaxRate Decimal @default(0) @db.Decimal(9, 4) // percentage points, e.g. 15.0000
 
   status   String @default("PENDING_PAYMENT") // PENDING_PAYMENT | ACTIVE | FAILED | VOID | REFUNDED
   channel  String @default("MINIAPP") // MINIAPP | USSD | ADMIN
@@ -575,6 +589,25 @@ model PaymentTransaction {
   amount  Decimal @db.Decimal(18, 2)
   purpose String  @default("BID_FEE") // BID_FEE
   status  String  @default("PENDING") // PENDING | SUCCESS | FAILED | EXPIRED | REVERSED
+
+  // The tax carved out of `amount`, copied from the bid at the moment the
+  // charge was raised. The bid carries the same figures, but a transaction is
+  // what proves money moved: tax owed is summed over SUCCESS rows here, so a
+  // bid whose payment failed or was reversed cannot inflate a remittance.
+  taxAmount Decimal @default(0) @db.Decimal(18, 2)
+  // The split as it was recorded at charge time. Reports derive the platform's
+  // share as `amount - taxAmount` rather than reading this, because it defaults
+  // to 0 and every transaction written before tax existed therefore stores a
+  // real gross against a zero net. Nothing needs backfilling; do not start
+  // summing this column without doing so first.
+  netAmount Decimal @default(0) @db.Decimal(18, 2)
+  taxRate   Decimal @default(0) @db.Decimal(9, 4)
+  // Where this tax is destined, as configured when the charge was raised. The
+  // gateway credits `accountNo` with the whole gross — one charge credits one
+  // account — so this is the remittance target, not a second leg of the
+  // payment. Stored per row so a later change of tax account cannot silently
+  // re-point tax that was already collected against the old one.
+  taxAccountNo String?
 
   paidByNumber    String?
   accountNo       String?

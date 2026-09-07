@@ -32,6 +32,7 @@ export const SETTING_CATEGORIES = [
   'winners',
   'reauction',
   'payments',
+  'tax',
   'ads',
   'notifications',
   'security',
@@ -45,6 +46,7 @@ export const CATEGORY_LABELS: Record<SettingCategory, string> = {
   winners: 'Winners & Claims',
   reauction: 'Re-Auction',
   payments: 'Payments',
+  tax: 'Tax',
   ads: 'Ads & Popups',
   notifications: 'Notifications',
   security: 'Security & Governance',
@@ -501,6 +503,60 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     category: 'payments',
     type: 'boolean',
     default: true,
+  },
+
+  // ---- Tax ----
+  // Inclusive: the quoted fee is what the bidder pays, and the tax is carved
+  // out of it. Turning this on does not change any price. See src/lib/tax.ts.
+  {
+    key: 'tax.enabled',
+    label: 'Apply tax to bid service fees',
+    description:
+      'Split every bid service fee into a net share and a tax share. The fee the bidder is charged does not change — the tax is included in it, not added to it.',
+    category: 'tax',
+    type: 'boolean',
+    default: false,
+    sensitive: true,
+  },
+  {
+    key: 'tax.rate',
+    label: 'Tax rate (%)',
+    description:
+      'Inclusive rate applied to the bid service fee. At 15% a 30.00 fee is 26.09 net and 3.91 tax. Each bid records the rate it was charged at, so changing this never rewrites past reports.',
+    category: 'tax',
+    type: 'number',
+    default: 15,
+    min: 0,
+    max: 100,
+    step: 0.01,
+    sensitive: true,
+  },
+  {
+    key: 'tax.label',
+    label: 'Tax name',
+    description: 'What the tax is called wherever a bidder sees it broken out of the fee.',
+    category: 'tax',
+    type: 'string',
+    default: 'VAT',
+  },
+  {
+    key: 'tax.accountNo',
+    label: 'Tax collection account',
+    description:
+      'Account the collected tax is remitted to. Bid fees are still charged once, in full, to the collection account under Payments — the super-app gateway credits one account per charge, so a second charge would mean a second wallet prompt on every bid. This account is what the Tax report tells you to transfer to.',
+    category: 'tax',
+    type: 'string',
+    default: '',
+    sensitive: true,
+  },
+  {
+    key: 'tax.registrationNumber',
+    label: 'Tax registration number',
+    description:
+      "The platform's TIN or VAT registration, shown to bidders alongside the tax breakdown. Leave empty to omit it.",
+    category: 'tax',
+    type: 'string',
+    default: '',
   },
 
   // ---- Ads & popups ----

@@ -51,6 +51,11 @@ interface Props {
   onBusyChange?: (busy: boolean) => void;
 }
 
+/** "15" for a whole rate, "7.5" for a fractional one. Never "15.00%". */
+function formatRate(rate: number): string {
+  return String(Number(rate.toFixed(2)));
+}
+
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 120_000;
 
@@ -180,6 +185,9 @@ export function BidPanel({
   const disabled = !isLive || busy || blocked || auctionFull;
   /** The next bid is already paid for, so no wallet approval is coming. */
   const nextIsFree = creditsLeft > 0;
+  // The tax line is only shown against a fee that is actually being charged:
+  // breaking down a fee of zero would read as though something were owed.
+  const tax = nextIsFree ? null : auction.tax;
 
   useEffect(
     () => () => {
@@ -598,8 +606,17 @@ export function BidPanel({
             {auction.bidFee.toFixed(2)} {currency} fee per bid · {t('auction.terms')}
           </p>
         ) : (
+          /* The tax note sits with the fee it is part of, and before the
+             confirmation dialog, so the breakdown is not something a bidder
+             first meets at the moment they are asked to commit. */
           <p className="mt-2.5 text-center text-xs text-muted-foreground">
             {t('bid.feeNotice', { fee: `${auction.bidFee.toFixed(2)} ${currency}` })}
+            {tax && (
+              <span className="mt-0.5 block">
+                {t('terms.feeIncludesTax', { label: tax.label, rate: formatRate(tax.rate) })} ·{' '}
+                {tax.amount.toFixed(2)} {currency}
+              </span>
+            )}
           </p>
         )}
 
@@ -691,6 +708,32 @@ export function BidPanel({
                     >
                       {nextIsFree ? t('terms.feeCovered') : t('terms.nonRefundable')}
                     </span>
+
+                    {/* The tax is inside the figure above, not beside it, so it
+                        sits under that figure as a breakdown and never as its
+                        own charge line — a bidder who reads only the big number
+                        has still read the whole of what they will pay. */}
+                    {tax && (
+                      <div className="w-full basis-full text-right text-[11px] leading-snug text-muted-foreground">
+                        <p className="font-semibold text-primary">
+                          {t('terms.feeIncludesTax', { label: tax.label, rate: formatRate(tax.rate) })}
+                        </p>
+                        <p className="mt-0.5 tabular-nums">
+                          {t('terms.netLine', { label: tax.label })}: {tax.net.toFixed(2)} {currency}
+                        </p>
+                        <p className="tabular-nums">
+                          {t('terms.taxLine', { label: tax.label })}: {tax.amount.toFixed(2)} {currency}
+                        </p>
+                        {tax.registrationNumber && (
+                          <p className="mt-0.5 opacity-80">
+                            {t('terms.taxRegistration', {
+                              label: tax.label,
+                              number: tax.registrationNumber,
+                            })}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </dd>
                 </div>
               </dl>
@@ -706,6 +749,14 @@ export function BidPanel({
                     </span>
                   )}
                   {t('terms.feeExplainer')}
+                  {tax && (
+                    <span className="mt-1.5 block">
+                      {t('terms.taxExplainer', {
+                        label: tax.label,
+                        rate: formatRate(tax.rate),
+                      })}
+                    </span>
+                  )}
                 </p>
               </div>
 

@@ -4,6 +4,7 @@ import { touchAuctionLifecycle } from './maintenance';
 import { carriedBidsRemaining, reauctionEligibility } from './reauction';
 import { participantEligibility } from './eligibility';
 import { firstImage, toNum } from './format';
+import { applyTax, taxConfigFrom } from './tax';
 import { tryDecryptBidAmount } from './bid-crypto';
 import type { AuctionStatus } from './types';
 
@@ -26,7 +27,29 @@ export interface PublicAuction {
   categoryId: string;
   categoryName: string;
   retailPrice: number;
+  /**
+   * Gross service fee per bid — the whole of what leaves the wallet. When tax
+   * is on, `tax` below says how much of this figure is tax; it is never added
+   * to it, so a bidder quoted 30.00 pays 30.00 either way.
+   */
   bidFee: number;
+  /**
+   * The inclusive tax carved out of `bidFee`, or null when tax is switched off.
+   * Present on the public auction so the confirmation dialog can show a bidder
+   * what they are paying without a second round trip.
+   */
+  tax: {
+    /** What it is called — "VAT", "Sales Tax", … */
+    label: string;
+    /** Percentage points, e.g. 15. */
+    rate: number;
+    /** The tax share of `bidFee`. */
+    amount: number;
+    /** The platform's share of `bidFee`. `amount + net === bidFee`. */
+    net: number;
+    /** The platform's TIN/VAT registration, or empty if not configured. */
+    registrationNumber: string;
+  } | null;
   minBidAmount: number;
   maxBidAmount: number;
   bidStep: number;
@@ -63,6 +86,27 @@ export interface PublicAuction {
 
 const PUBLIC_STATUSES: AuctionStatus[] = ['SCHEDULED', 'LIVE', 'ENDED', 'SETTLED'];
 
+/**
+ * The tax line for one auction's fee, or null when there is nothing to show.
+ *
+ * A rate configured as 0, or a fee of 0, both come back null rather than as a
+ * "0.00 VAT" row: a line that always reads zero teaches bidders to skip the
+ * breakdown, which is the opposite of why it is there.
+ */
+function publicTax(bidFee: number, settings: Record<string, string | number | boolean>) {
+  const config = taxConfigFrom(settings);
+  if (!config.enabled) return null;
+  const split = applyTax(bidFee, config);
+  if (split.tax <= 0) return null;
+  return {
+    label: config.label,
+    rate: split.rate,
+    amount: split.tax,
+    net: split.net,
+    registrationNumber: config.registrationNumber,
+  };
+}
+
 function mapAuction(
   auction: any,
   settings: Record<string, string | number | boolean>
@@ -89,6 +133,7 @@ function mapAuction(
     categoryName: auction.category?.name ?? '',
     retailPrice: toNum(auction.item?.retailPrice),
     bidFee: toNum(auction.bidFee),
+    tax: publicTax(toNum(auction.bidFee), settings),
     minBidAmount: toNum(auction.minBidAmount),
     maxBidAmount: toNum(auction.maxBidAmount),
     bidStep: toNum(auction.bidStep),

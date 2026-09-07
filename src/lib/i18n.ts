@@ -135,6 +135,20 @@ const dictionary = {
     en: 'The bid service fee is non-refundable and is paid from your wallet to participate in the auction. The amount you submit as a bid is not charged at the time of placing the bid. In this auction, winners are determined based on the lowest unique bid submitted among all participants. Only participants who win the auction are required to pay the amount of their winning bid, in addition to the service fee.',
     am: 'የጨረታ አገልግሎት ክፍያው ተመላሽ የማይደረግ ሲሆን በጨረታው ለመሳተፍ ከኪስ ቦርሳዎ ይከፈላል። እንደ ጨረታ የሚያስገቡት መጠን ጨረታውን በሚያስገቡበት ጊዜ አይከፈልም። በዚህ ጨረታ አሸናፊዎች የሚወሰኑት ከሁሉም ተሳታፊዎች መካከል በቀረበው ዝቅተኛ ልዩ ጨረታ መሠረት ነው። ከአገልግሎት ክፍያው በተጨማሪ ያሸነፉበትን የጨረታ መጠን መክፈል የሚጠበቅባቸው ያሸነፉ ተሳታፊዎች ብቻ ናቸው።',
   },
+  // Tax lines. The fee is quoted inclusive of tax, so these describe how the
+  // one charge divides — never an extra amount. `{label}` is the configured
+  // tax name and `{rate}` its percentage; both come from Settings → Tax.
+  'terms.feeIncludesTax': {
+    en: '{label} ({rate}%) included',
+    am: '{label} ({rate}%) ተካትቷል',
+  },
+  'terms.taxLine': { en: 'of which {label}', am: 'ከዚህ ውስጥ {label}' },
+  'terms.netLine': { en: 'Service fee before {label}', am: 'ከ{label} በፊት የአገልግሎት ክፍያ' },
+  'terms.taxExplainer': {
+    en: 'Your fee already includes {label} at {rate}% — nothing further is added at payment. The {label} portion is collected on behalf of the tax authority.',
+    am: 'ክፍያዎ {label} በ{rate}% አስቀድሞ አካትቷል — በክፍያ ጊዜ ተጨማሪ ነገር አይታከልም። የ{label} ድርሻ ለግብር ባለሥልጣኑ ወክሎ ይሰበሰባል።',
+  },
+  'terms.taxRegistration': { en: '{label} reg. no. {number}', am: 'የ{label} ምዝገባ ቁጥር {number}' },
   'terms.read': { en: 'Read', am: 'ያንብቡ' },
   'terms.hide': { en: 'Hide', am: 'ደብቅ' },
   'terms.accept': {

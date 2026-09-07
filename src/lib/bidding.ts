@@ -13,6 +13,7 @@ import { participantEligibility } from './eligibility';
 import { PaymentError, initiateBidFeePayment } from './payment-gateway';
 import { BidAmountCipherError, decryptBidAmount, encryptBidAmount } from './bid-crypto';
 import { AppLockError, acquireAppLock, bidderAuctionLock, type TxClient } from './db-lock';
+import { applyTax, taxConfigFrom } from './tax';
 
 export class BidRejected extends Error {
   status: number;
@@ -64,7 +65,14 @@ export interface PlaceBidInput {
 export interface PlaceBidResult {
   bidId: string;
   amount: number;
+  /** Gross charged to the wallet. Includes `feeTax` — the tax is not added on top. */
   feeAmount: number;
+  /** The platform's share of `feeAmount`. */
+  feeNet: number;
+  /** The tax share already inside `feeAmount`; 0 when tax is off or the bid was free. */
+  feeTax: number;
+  /** Rate the split was made at, in percentage points. */
+  feeTaxRate: number;
   status: 'PENDING_PAYMENT' | 'ACTIVE';
   sequence: number;
   transactionId?: string;
@@ -270,6 +278,11 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
   const scope = { auctionId: auction.id, bidderId: bidder.id };
   const feesEnabled = Boolean(settings['payments.enabled']) && !input.isTest;
   const cooldown = Number(settings['bidding.cooldownSeconds']) || 0;
+  // Read once, here, rather than inside the transaction: every bid in a burst
+  // must be split at the same rate the bidder was quoted, and a settings cache
+  // that expires mid-transaction would otherwise tax two bids of one batch
+  // differently. The rate that applies is snapshotted onto the bid row below.
+  const taxConfig = taxConfigFrom(settings);
 
   const recorded = await prisma
     .$transaction(async (tx) => {
@@ -297,6 +310,9 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
             id: true,
             amountCipher: true,
             feeAmount: true,
+            feeNet: true,
+            feeTax: true,
+            feeTaxRate: true,
             status: true,
             sequence: true,
             carriedOver: true,
@@ -381,6 +397,11 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
       const sequence = myBids.length + 1;
       const carriedOver = feesEnabled ? await claimBidCredit(bidder.id, auction.id, tx) : false;
       const feeAmount = feesEnabled && !carriedOver ? toNum(auction.bidFee) : 0;
+      // Inclusive, so this does not change `feeAmount` — it only records how
+      // much of it is the revenue authority's. A zero fee splits to zero tax,
+      // which is what keeps carried-over and pilot-mode bids out of the tax
+      // ledger without a special case anywhere downstream.
+      const tax = applyTax(feeAmount, taxConfig);
 
       const bid = await tx.bid.create({
         data: {
@@ -388,6 +409,9 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
           bidderId: bidder.id,
           amountCipher,
           feeAmount,
+          feeNet: tax.net,
+          feeTax: tax.tax,
+          feeTaxRate: tax.rate,
           status: 'PENDING_PAYMENT',
           channel: input.isTest ? 'TEST' : 'MINIAPP',
           sequence,
@@ -411,7 +435,7 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
         throw new BidRejected('This auction has already closed.', 'AUCTION_NOT_LIVE', 409);
       }
 
-      return { replayed: false as const, bid, sequence, feeAmount, carriedOver };
+      return { replayed: false as const, bid, sequence, feeAmount, carriedOver, tax };
     })
     .catch(asBidRejection);
 
@@ -426,7 +450,12 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
       // Opened from the stored ciphertext rather than echoed from the request:
       // what the bidder needs to see is the amount that is actually recorded.
       amount: decryptBidAmount(previous.amountCipher, scope),
+      // Read back from the row, not recomputed: if the rate has moved since the
+      // first attempt, the bidder is owed the figures they were actually charged.
       feeAmount: toNum(previous.feeAmount),
+      feeNet: toNum(previous.feeNet),
+      feeTax: toNum(previous.feeTax),
+      feeTaxRate: toNum(previous.feeTaxRate),
       status: previous.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING_PAYMENT',
       sequence: previous.sequence,
       remainingBids: Math.max(0, auction.maxBidsPerUser - previous.sequence),
@@ -438,7 +467,7 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
     };
   }
 
-  const { bid, sequence, feeAmount, carriedOver } = recorded;
+  const { bid, sequence, feeAmount, carriedOver, tax } = recorded;
   const carriedBidsRemaining = carriedOver ? await remainingCredits(bidder.id, auction.id) : 0;
 
   await createAuditLog({
@@ -457,6 +486,9 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
       auctionId: auction.id,
       auctionCode: auction.code,
       feeAmount,
+      feeNet: tax.net,
+      feeTax: tax.tax,
+      feeTaxRate: tax.rate,
       sequence,
       carriedOver,
       reauctionRound: auction.reauctionRound,
@@ -477,6 +509,9 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
       bidId: bid.id,
       amount,
       feeAmount,
+      feeNet: tax.net,
+      feeTax: tax.tax,
+      feeTaxRate: tax.rate,
       status: 'ACTIVE',
       sequence,
       remainingBids,
@@ -491,6 +526,8 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
       bidderId: bidder.id,
       auctionId: auction.id,
       amount: feeAmount,
+      tax,
+      taxAccountNo: taxConfig.accountNo,
       superAppToken: input.superAppToken,
       ipAddress: input.ipAddress,
       userAgent: input.userAgent,
@@ -500,6 +537,9 @@ export async function placeBid(input: PlaceBidInput): Promise<PlaceBidResult> {
       bidId: bid.id,
       amount,
       feeAmount,
+      feeNet: tax.net,
+      feeTax: tax.tax,
+      feeTaxRate: tax.rate,
       status: 'PENDING_PAYMENT',
       sequence,
       transactionId: payment.transactionId,

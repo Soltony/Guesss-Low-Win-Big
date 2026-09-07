@@ -5,6 +5,7 @@ import { getSettings } from './settings';
 import { auditExternalRequest, auditExternalResponse, newCorrelationId } from './audit-log';
 import { toNum } from './format';
 import { secretsMatch } from './secrets';
+import type { TaxBreakdown } from './tax';
 import {
   describeValue,
   headerMap,
@@ -337,7 +338,21 @@ export interface InitiatePaymentInput {
   bidId: string;
   bidderId: string;
   auctionId: string;
+  /** Gross charged to the wallet. Tax is inside this, never added to it. */
   amount: number;
+  /**
+   * How `amount` divides between the platform and the revenue authority.
+   *
+   * Recorded against the transaction, but deliberately absent from everything
+   * below the `prisma.paymentTransaction.create` call: the gateway credits one
+   * account per charge, and the signature is computed over the gross, so
+   * splitting the payment here would break the signature and raise a second
+   * wallet prompt. The money arrives whole; the tax share is remitted from the
+   * collection account against the Tax report. See src/lib/tax.ts.
+   */
+  tax?: TaxBreakdown;
+  /** Account the tax share is destined for, recorded for the remittance report. */
+  taxAccountNo?: string;
   superAppToken: string;
   ipAddress?: string | null;
   userAgent?: string | null;
@@ -418,6 +433,12 @@ export async function initiateBidFeePayment(
       auctionId: input.auctionId,
       bidId: input.bidId,
       amount: input.amount,
+      // The gross above is what the gateway is asked for; these three only
+      // describe how it will be divided once it lands.
+      taxAmount: input.tax?.tax ?? 0,
+      netAmount: input.tax ? input.tax.net : input.amount,
+      taxRate: input.tax?.rate ?? 0,
+      taxAccountNo: input.taxAccountNo || null,
       purpose: 'BID_FEE',
       status: 'PENDING',
       accountNo: config.accountNo,

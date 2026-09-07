@@ -12,6 +12,7 @@ import { getCurrentUser } from '@/lib/session';
 import { hasPermission } from '@/lib/permissions';
 import { PAYMENT_STATUSES } from '@/lib/types';
 import { toNum } from '@/lib/format';
+import { getTaxConfig } from '@/lib/tax';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Payments' };
@@ -41,7 +42,7 @@ export default async function PaymentsPage({
       : {}),
   };
 
-  const [user, payments, total, statusGroups, successTotal] = await Promise.all([
+  const [user, payments, total, statusGroups, successTotal, taxConfig] = await Promise.all([
     getCurrentUser({ allowRefresh: false }),
     prisma.paymentTransaction.findMany({
       where,
@@ -62,11 +63,16 @@ export default async function PaymentsPage({
     }),
     prisma.paymentTransaction.aggregate({
       where: { status: 'SUCCESS' },
-      _sum: { amount: true },
+      _sum: { amount: true, taxAmount: true },
     }),
+    getTaxConfig(),
   ]);
 
   const byStatus = new Map(statusGroups.map((g) => [g.status, g]));
+  const taxCollected = toNum(successTotal._sum.taxAmount);
+  // Shown once tax has been charged, and kept visible afterwards so history
+  // does not lose its explanation when the setting is turned back off.
+  const showTax = taxConfig.enabled || taxCollected > 0;
   const canUpdate = hasPermission(user, 'payments', 'update');
   const canApprove = hasPermission(user, 'payments', 'approve');
 
@@ -86,6 +92,17 @@ export default async function PaymentsPage({
           hint={`${byStatus.get('SUCCESS')?._count._all ?? 0} successful`}
           tone="success"
         />
+        {showTax && (
+          <StatCard
+            label={`${taxConfig.label} collected`}
+            value={`${taxCollected.toLocaleString('en-US', {
+              maximumFractionDigits: 0,
+            })} Br`}
+            hint={`Inside "Collected" · net ${(
+              toNum(successTotal._sum.amount) - taxCollected
+            ).toLocaleString('en-US', { maximumFractionDigits: 0 })} Br`}
+          />
+        )}
         <StatCard
           label="Pending"
           value={byStatus.get('PENDING')?._count._all ?? 0}
@@ -195,6 +212,11 @@ export default async function PaymentsPage({
                 </td>
                 <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
                   {toNum(payment.amount).toFixed(2)}
+                  {showTax && toNum(payment.taxAmount) > 0 && (
+                    <p className="text-xs font-normal text-muted-foreground">
+                      incl. {toNum(payment.taxAmount).toFixed(2)} {taxConfig.label}
+                    </p>
+                  )}
                 </td>
                 <td className="px-4 py-2.5">
                   <StatusBadge status={payment.status} />
