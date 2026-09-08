@@ -25,6 +25,12 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useLanguage } from './language-provider';
 import {
+  abortPendingPayment,
+  nextPaint,
+  startPendingPayment,
+  subscribePaymentOutcome,
+} from '@/lib/pending-payment';
+import {
   bidAmountDecimals,
   bidAmountPattern,
   checkBidAmount,
@@ -60,9 +66,6 @@ interface Props {
 function formatRate(rate: number): string {
   return String(Number(rate.toFixed(2)));
 }
-
-const POLL_INTERVAL_MS = 2000;
-const POLL_TIMEOUT_MS = 120_000;
 
 declare global {
   interface Window {
@@ -132,7 +135,8 @@ export function BidPanel({
   // Server-confirmed balance after each accepted bid, so the panel does not
   // promise a free bid the credit ledger has already spent.
   const [creditsLeft, setCreditsLeft] = useState(carriedBids);
-  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** The bid whose fee the shell's watcher is currently collecting, if any. */
+  const watchedBid = useRef<string | null>(null);
   const amountRef = useRef<HTMLInputElement>(null);
   const statusRef = useRef<HTMLDivElement>(null);
 
@@ -201,11 +205,35 @@ export function BidPanel({
   // breaking down a fee of zero would read as though something were owed.
   const tax = nextIsFree ? null : auction.tax;
 
+  /**
+   * The verdict, reported by the shell's payment watcher.
+   *
+   * The wait itself is not run here: it has to outlive this panel, which sits
+   * in a sheet that closes the moment the host takes the screen. What the
+   * panel still wants is the ending — to clear the field on a confirmed bid,
+   * to release the idempotency key, and to leave a note behind for whoever
+   * comes back to the form after dismissing the payment screen.
+   */
   useEffect(
-    () => () => {
-      if (pollTimer.current) clearInterval(pollTimer.current);
-    },
-    []
+    () =>
+      subscribePaymentOutcome((outcome) => {
+        if (outcome.bidId !== watchedBid.current) return;
+        watchedBid.current = null;
+
+        if (outcome.settled === 'confirmed') {
+          setPhase('confirmed');
+          setMessage(null);
+          setRegisteredAmount(outcome.amount);
+          setAmount('');
+          // Settled: the next bid is a new intent and must not replay this one.
+          attempt.current = null;
+          router.refresh();
+        } else {
+          setPhase('failed');
+          setMessage(outcome.message);
+        }
+      }),
+    [router]
   );
 
   useEffect(() => {
@@ -248,52 +276,44 @@ export function BidPanel({
     event.target.value = amount;
   };
 
-  const pollBidStatus = useCallback(
-    (bidId: string, bidAmount: number) => {
-      const startedAt = Date.now();
-      if (pollTimer.current) clearInterval(pollTimer.current);
+  /**
+   * Hands the wait to the shell's watcher, and gets the waiting screen painted
+   * before the host can take the screen away.
+   *
+   * The order here is the whole fix: `startPendingPayment` writes the wait down
+   * and raises the page, `nextPaint` lets the browser actually draw it, and
+   * only then does the token go over the channel. Posting in the same task
+   * meant the PIN sheet opened over a page React had scheduled but never
+   * committed — so the bidder saw whatever had been on screen before it.
+   */
+  const handOffToWallet = useCallback(
+    async (bidId: string, value: number, paymentToken: string | null) => {
+      watchedBid.current = bidId;
+      startPendingPayment({
+        bidId,
+        amount: value,
+        fee: auction.bidFee,
+        currency,
+        auctionTitle: auction.title,
+      });
+      await nextPaint();
 
-      pollTimer.current = setInterval(async () => {
-        if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
-          clearInterval(pollTimer.current!);
-          setPhase('failed');
-          setMessage(
-            'Still waiting on the payment confirmation. Check My Bids shortly — if the fee was taken, your bid will be there.'
-          );
-          return;
-        }
+      if (!paymentToken || !requestWalletApproval(paymentToken)) {
+        // No token ever reached the wallet, so nothing is in flight and there
+        // is no late confirmation to hold the screen for — unlike a failure
+        // the gateway reports, this one is already final.
+        const reason =
+          'Could not open the wallet to approve the fee. Please reopen this mini app from the super app and try again.';
+        watchedBid.current = null;
+        abortPendingPayment(bidId, reason);
+        setPhase('failed');
+        setMessage(reason);
+        return false;
+      }
 
-        try {
-          const response = await fetch(`/api/miniapp/bids/${bidId}/status`, { cache: 'no-store' });
-          if (!response.ok) return;
-          const data = await response.json();
-
-          if (data.status === 'ACTIVE') {
-            clearInterval(pollTimer.current!);
-            setPhase('confirmed');
-            setMessage(null);
-            // What the ledger holds, not what was typed — the server rounds to
-            // two places before it stores the bid.
-            setRegisteredAmount(typeof data.amount === 'number' ? data.amount : bidAmount);
-            setAmount('');
-            // Settled: the next bid is a new intent and must not replay this one.
-            attempt.current = null;
-            router.refresh();
-          } else if (data.status === 'FAILED' || data.status === 'VOID') {
-            clearInterval(pollTimer.current!);
-            setPhase('failed');
-            setMessage(
-              data.voidReason ||
-                data.payment?.failureReason ||
-                'The payment was not completed, so this bid was not counted.'
-            );
-          }
-        } catch {
-          // Transient blip inside the webview; the next tick retries.
-        }
-      }, POLL_INTERVAL_MS);
+      return true;
     },
-    [router]
+    [auction.bidFee, auction.title, currency]
   );
 
   /** Loaded once per panel, the first time the confirmation is opened. */
@@ -400,25 +420,26 @@ export function BidPanel({
       // nothing to hand the wallet. Watch the bid that is there instead of
       // reporting a wallet failure for a payment that may be halfway done.
       if (data.replayed) {
+        // The charge from the first attempt may still be in flight, so this
+        // rejoins the wait rather than handing the wallet a second token.
+        watchedBid.current = data.bidId;
         setPhase('awaiting-payment');
         setMessage('This bid was already registered — waiting on the payment confirmation.');
-        pollBidStatus(data.bidId, value);
+        startPendingPayment({
+          bidId: data.bidId,
+          amount: value,
+          fee: auction.bidFee,
+          currency,
+          auctionTitle: auction.title,
+        });
         return;
       }
 
       // The fee is taken by the super app, not by us: the PIN sheet only opens
       // once this token goes back over its channel, so a bid that cannot be
       // handed over is a bid nobody will ever be asked to pay for.
-      if (!data.paymentToken || !requestWalletApproval(data.paymentToken)) {
-        setPhase('failed');
-        setMessage(
-          'Could not open the wallet to approve the fee. Please reopen this mini app from the super app and try again.'
-        );
-        return;
-      }
-
       setPhase('awaiting-payment');
-      pollBidStatus(data.bidId, value);
+      await handOffToWallet(data.bidId, value, data.paymentToken ?? null);
     } catch {
       setPhase('failed');
       setMessage('Network error. Check your connection and try again.');
@@ -894,6 +915,7 @@ export function BidPanel({
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
+
     </div>
   );
 }

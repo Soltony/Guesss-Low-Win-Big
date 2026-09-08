@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { LANGUAGES } from '@/lib/i18n';
 import { LanguageProvider, useLanguage } from './language-provider';
 import { AdPopup } from './ad-popup';
+import { PaymentWatcher } from './payment-watcher';
 import { Logo } from '@/components/icons';
 import { splitBrandName, useBrandName } from '@/components/brand-provider';
 import type { Language } from '@/lib/types';
@@ -122,6 +123,13 @@ export function MiniAppShell({
         {/* Only a connected bidder can be served an ad — the endpoint needs the
             session, and impressions are tracked per bidder. */}
         {user && <AdPopup />}
+
+        {/* Outside `main`, and outside every sheet and route, because the fee
+            collection it watches outlives all of them: the bid sheet closes,
+            the host takes the screen for its PIN keypad, and the webview may
+            be reloaded before the payment settles. Mounted here it survives
+            that and resumes the wait on boot. */}
+        {user && <PaymentWatcher />}
       </div>
     </LanguageProvider>
   );

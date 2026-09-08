@@ -80,6 +80,23 @@ const dictionary = {
     am: 'ይህ ጨረታ ቀደም ብለው በከፈሉት ተሸፍኗል — አዲስ ክፍያ አይጠየቅም።',
   },
 
+  // The payment screen the super app's PIN sheet opens over.
+  'pay.approveHint': {
+    en: 'Approve the {fee} service fee in your wallet to place this bid.',
+    am: 'ይህን ጨረታ ለማስቀመጥ የ{fee} የአገልግሎት ክፍያ በኪስ ቦርሳዎ ያጽድቁ።',
+  },
+  'pay.keepOpen': {
+    en: 'Keep this screen open. Your bid counts the moment the payment clears.',
+    am: 'ይህን ገጽ ክፍት ያድርጉ። ክፍያው እንደተጠናቀቀ ጨረታዎ ይቆጠራል።',
+  },
+  'pay.serviceFee': { en: 'Service fee', am: 'የአገልግሎት ክፍያ' },
+  'pay.failedFallback': {
+    en: 'The payment was not completed, so this bid was not counted.',
+    am: 'ክፍያው ስላልተጠናቀቀ ይህ ጨረታ አልተቆጠረም።',
+  },
+  'pay.done': { en: 'Done', am: 'ተጠናቅቋል' },
+  'pay.tryAgain': { en: 'Try again', am: 'እንደገና ይሞክሩ' },
+
   'ledger.open': { en: 'See how this was decided', am: 'ውሳኔው እንዴት እንደተሰጠ ይመልከቱ' },
   'ledger.title': { en: 'Bid history', am: 'የጨረታ ታሪክ' },
   'ledger.totalBids': { en: 'Total bids', am: 'ጠቅላላ ጨረታዎች' },
