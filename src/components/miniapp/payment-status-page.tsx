@@ -1,7 +1,7 @@
 'use client';
 
 import * as Dialog from '@radix-ui/react-dialog';
-import { CheckCircle2, Loader2, ShieldCheck, XCircle } from 'lucide-react';
+import { CheckCircle2, Gavel, Loader2, Package, ShieldCheck, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useLanguage } from './language-provider';
 
@@ -9,7 +9,7 @@ import { useLanguage } from './language-provider';
  * `waiting` covers the whole hand-off: the token going out over the super
  * app's JS channel, the PIN sheet, and the gateway's callback reaching us. A
  * failure the gateway reports is *also* shown as `waiting` for a grace period
- * before it resolves to `failed` — see `bid-panel`.
+ * before it resolves to `failed` — see `payment-watcher`.
  */
 export type PaymentStatus = 'waiting' | 'success' | 'failed';
 
@@ -20,12 +20,56 @@ interface Props {
   amount: number | null;
   fee: number;
   currency: string;
-  /** Auction title, for the line inside the summary card. */
   auctionTitle: string;
+  auctionCode: string;
+  imageUrl: string | null;
+  /** Bids left on this auction once this one is counted. */
+  remainingBids: number | null;
   /** Why the payment failed, when the panel has a reason from the gateway. */
   message: string | null;
   /** Only reachable once the payment has settled either way. */
   onDone: () => void;
+}
+
+/** Per-state palette, so the whole screen commits to one colour at a time. */
+const TONE = {
+  waiting: { token: 'accent', ring: 'border-accent/25', wash: 'bg-accent/10' },
+  success: { token: 'success', ring: 'border-success/25', wash: 'bg-success/10' },
+  failed: { token: 'destructive', ring: 'border-destructive/25', wash: 'bg-destructive/10' },
+} as const;
+
+/** One figure in the summary card. `lead` is the number the screen is about. */
+function Row({
+  label,
+  value,
+  unit,
+  lead = false,
+}: {
+  label: string;
+  value: string;
+  unit?: string;
+  lead?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <span
+        className={cn(
+          'font-extrabold leading-none tabular-nums',
+          lead ? 'text-[22px]' : 'text-sm text-muted-foreground'
+        )}
+      >
+        {value}
+        {unit && (
+          <span className={cn('ml-1 text-[11px] font-semibold', lead && 'text-muted-foreground')}>
+            {unit}
+          </span>
+        )}
+      </span>
+    </div>
+  );
 }
 
 /**
@@ -46,11 +90,15 @@ export function PaymentStatusPage({
   fee,
   currency,
   auctionTitle,
+  auctionCode,
+  imageUrl,
+  remainingBids,
   message,
   onDone,
 }: Props) {
   const { t } = useLanguage();
   const settled = status !== 'waiting';
+  const tone = TONE[status];
 
   return (
     <Dialog.Root open={open}>
@@ -75,25 +123,46 @@ export function PaymentStatusPage({
             paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 2rem)',
           }}
         >
-          <div className="flex w-full max-w-sm flex-col items-center text-center">
+          {/* Colour wash behind the badge, so the state is legible before a
+              single word is read. Sits under the content, never over it. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 top-0 h-[60%]"
+            style={{
+              background: `radial-gradient(62% 52% at 50% 20%, hsl(var(--${tone.token}) / 0.14), transparent 72%)`,
+            }}
+          />
+
+          <div className="relative flex w-full max-w-sm flex-col items-center text-center">
             {/* ---------- The badge ---------- */}
-            <div
-              className={cn(
-                'flex h-24 w-24 shrink-0 items-center justify-center rounded-full border-2',
-                status === 'waiting' && 'border-accent/30 bg-accent/10',
-                status === 'success' && 'border-success/30 bg-success/10',
-                status === 'failed' && 'border-destructive/30 bg-destructive/10'
-              )}
-            >
+            <div className="relative flex h-28 w-28 shrink-0 items-center justify-center">
+              {/* Only the wait animates. A verdict that keeps pulsing reads as
+                  though it were still deciding something. */}
               {status === 'waiting' && (
-                <Loader2 className="h-11 w-11 animate-spin text-accent" strokeWidth={2} />
+                <span
+                  aria-hidden
+                  className="absolute inset-1 animate-ping rounded-full bg-accent/20"
+                  style={{ animationDuration: '2.2s' }}
+                />
               )}
-              {status === 'success' && (
-                <CheckCircle2 className="h-12 w-12 text-success" strokeWidth={2} />
-              )}
-              {status === 'failed' && (
-                <XCircle className="h-12 w-12 text-destructive" strokeWidth={2} />
-              )}
+              <span aria-hidden className={cn('absolute inset-0 rounded-full', tone.wash)} />
+              <span
+                className={cn(
+                  'relative flex h-[5.5rem] w-[5.5rem] items-center justify-center rounded-full border-2 bg-card shadow-[0_10px_30px_-12px_hsl(224_47%_9%/0.35)]',
+                  tone.ring,
+                  settled && 'animate-in zoom-in-50 duration-500'
+                )}
+              >
+                {status === 'waiting' && (
+                  <Loader2 className="h-10 w-10 animate-spin text-accent" strokeWidth={2.25} />
+                )}
+                {status === 'success' && (
+                  <CheckCircle2 className="h-11 w-11 text-success" strokeWidth={2.25} />
+                )}
+                {status === 'failed' && (
+                  <XCircle className="h-11 w-11 text-destructive" strokeWidth={2.25} />
+                )}
+              </span>
             </div>
 
             {/* ---------- The verdict ----------
@@ -102,7 +171,7 @@ export function PaymentStatusPage({
             <div aria-live="polite" className="w-full">
               <Dialog.Title
                 className={cn(
-                  'mt-6 text-xl font-extrabold leading-tight',
+                  'mt-6 text-[26px] font-extrabold leading-tight tracking-tight',
                   status === 'success' && 'text-success',
                   status === 'failed' && 'text-destructive'
                 )}
@@ -112,7 +181,7 @@ export function PaymentStatusPage({
                 {status === 'failed' && t('bid.failed')}
               </Dialog.Title>
 
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              <p className="mx-auto mt-2 max-w-[19rem] text-sm leading-relaxed text-muted-foreground">
                 {status === 'waiting' &&
                   t('pay.approveHint', { fee: `${fee.toFixed(2)} ${currency}` })}
                 {status === 'success' && t('bid.hiddenUntilEnd')}
@@ -121,35 +190,60 @@ export function PaymentStatusPage({
             </div>
 
             {/* ---------- What is being paid for ---------- */}
-            <div className="mt-7 w-full rounded-2xl border border-border bg-card px-4 py-3.5 text-left">
-              <p className="line-clamp-2 text-[13px] font-bold leading-snug">{auctionTitle}</p>
-
-              <div className="mt-3 flex items-end justify-between gap-3 border-t border-border pt-3">
-                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {status === 'success' ? t('bid.registered') : t('auction.bidAmount')}
-                </span>
-                <span className="text-lg font-extrabold leading-none tabular-nums">
-                  {amount !== null ? amount.toFixed(2) : '—'}
-                  <span className="ml-1 text-[11px] font-semibold text-muted-foreground">
-                    {currency}
-                  </span>
-                </span>
+            <div className="gl-card mt-7 w-full overflow-hidden text-left">
+              <div className="flex items-center gap-3 px-4 py-3">
+                <div className="gl-media h-12 w-12 shrink-0">
+                  {imageUrl ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={imageUrl} alt="" className="h-full w-full object-contain p-1" />
+                  ) : (
+                    <Package className="h-5 w-5 text-muted-foreground/60" strokeWidth={1.5} />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="line-clamp-2 text-[13px] font-bold leading-snug">{auctionTitle}</p>
+                  <p className="mt-0.5 font-mono text-[11px] font-medium text-muted-foreground">
+                    #{auctionCode}
+                  </p>
+                </div>
               </div>
 
-              <div className="mt-2.5 flex items-end justify-between gap-3">
-                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {t('pay.serviceFee')}
-                </span>
-                <span className="text-sm font-bold leading-none tabular-nums text-muted-foreground">
-                  {fee.toFixed(2)}
-                  <span className="ml-1 text-[11px] font-semibold">{currency}</span>
-                </span>
+              <div className="space-y-2.5 border-t border-border bg-secondary/30 px-4 py-3.5">
+                <Row
+                  lead
+                  label={status === 'success' ? t('bid.registered') : t('auction.bidAmount')}
+                  value={amount !== null ? amount.toFixed(2) : '—'}
+                  unit={currency}
+                />
+                <Row label={t('pay.serviceFee')} value={fee.toFixed(2)} unit={currency} />
+
+                {/* Only ever the server's own count. Guessing at it here would
+                    put a number in front of the bidder that the next screen
+                    they open could contradict. */}
+                {remainingBids !== null && (
+                  <div className="flex items-center justify-between gap-3 border-t border-border/70 pt-2.5">
+                    <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <Gavel className="h-3.5 w-3.5" strokeWidth={2.5} />
+                      {t('pay.bidsRemaining')}
+                    </span>
+                    <span
+                      className={cn(
+                        'gl-pill tabular-nums',
+                        remainingBids > 0
+                          ? 'border-primary/40 bg-primary/10 font-bold'
+                          : 'text-muted-foreground'
+                      )}
+                    >
+                      {remainingBids}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* ---------- The way out ---------- */}
             {status === 'waiting' ? (
-              <p className="mt-7 flex items-start gap-2 text-left text-xs leading-relaxed text-muted-foreground">
+              <p className="mt-6 flex items-start gap-2 rounded-xl border border-border bg-secondary/50 px-3.5 py-2.5 text-left text-xs leading-relaxed text-muted-foreground">
                 <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
                 {t('pay.keepOpen')}
               </p>
@@ -159,10 +253,10 @@ export function PaymentStatusPage({
                 onClick={onDone}
                 autoFocus
                 className={cn(
-                  'mt-7 w-full rounded-xl px-4 py-3.5 text-base font-bold transition-colors',
+                  'mt-6 w-full rounded-xl px-4 py-3.5 text-base font-bold transition-colors',
                   status === 'success'
                     ? 'gl-gold'
-                    : 'border border-border bg-secondary text-foreground hover:bg-secondary/70'
+                    : 'border border-border bg-card text-foreground hover:bg-secondary'
                 )}
               >
                 {status === 'success' ? t('pay.done') : t('pay.tryAgain')}

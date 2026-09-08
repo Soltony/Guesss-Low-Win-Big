@@ -90,6 +90,7 @@ const dictionary = {
     am: 'ይህን ገጽ ክፍት ያድርጉ። ክፍያው እንደተጠናቀቀ ጨረታዎ ይቆጠራል።',
   },
   'pay.serviceFee': { en: 'Service fee', am: 'የአገልግሎት ክፍያ' },
+  'pay.bidsRemaining': { en: 'Bids remaining', am: 'የቀሩ ጨረታዎች' },
   'pay.failedFallback': {
     en: 'The payment was not completed, so this bid was not counted.',
     am: 'ክፍያው ስላልተጠናቀቀ ይህ ጨረታ አልተቆጠረም።',

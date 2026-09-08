@@ -29,6 +29,7 @@ import {
   nextPaint,
   startPendingPayment,
   subscribePaymentOutcome,
+  type PendingPayment,
 } from '@/lib/pending-payment';
 import {
   bidAmountDecimals,
@@ -287,15 +288,10 @@ export function BidPanel({
    * committed — so the bidder saw whatever had been on screen before it.
    */
   const handOffToWallet = useCallback(
-    async (bidId: string, value: number, paymentToken: string | null) => {
+    async (payment: Omit<PendingPayment, 'startedAt'>, paymentToken: string | null) => {
+      const bidId = payment.bidId;
       watchedBid.current = bidId;
-      startPendingPayment({
-        bidId,
-        amount: value,
-        fee: auction.bidFee,
-        currency,
-        auctionTitle: auction.title,
-      });
+      startPendingPayment(payment);
       await nextPaint();
 
       if (!paymentToken || !requestWalletApproval(paymentToken)) {
@@ -313,7 +309,7 @@ export function BidPanel({
 
       return true;
     },
-    [auction.bidFee, auction.title, currency]
+    []
   );
 
   /** Loaded once per panel, the first time the confirmation is opened. */
@@ -419,19 +415,28 @@ export function BidPanel({
       // already asked for on the first attempt, so there is no new token and
       // nothing to hand the wallet. Watch the bid that is there instead of
       // reporting a wallet failure for a payment that may be halfway done.
+      // Everything the payment screen needs to stand on its own, including
+      // after a reload that leaves it as the only thing still mounted.
+      const pending: Omit<PendingPayment, 'startedAt'> = {
+        bidId: data.bidId,
+        amount: value,
+        fee: auction.bidFee,
+        currency,
+        auctionTitle: auction.title,
+        auctionCode: auction.code,
+        imageUrl: auction.imageUrl ?? auction.images[0] ?? null,
+        // The server's own count, never a local guess: it is `maxBidsPerUser`
+        // less the sequence this bid was actually given.
+        remainingBids: typeof data.remainingBids === 'number' ? data.remainingBids : null,
+      };
+
       if (data.replayed) {
         // The charge from the first attempt may still be in flight, so this
         // rejoins the wait rather than handing the wallet a second token.
         watchedBid.current = data.bidId;
         setPhase('awaiting-payment');
         setMessage('This bid was already registered — waiting on the payment confirmation.');
-        startPendingPayment({
-          bidId: data.bidId,
-          amount: value,
-          fee: auction.bidFee,
-          currency,
-          auctionTitle: auction.title,
-        });
+        startPendingPayment(pending);
         return;
       }
 
@@ -439,7 +444,7 @@ export function BidPanel({
       // once this token goes back over its channel, so a bid that cannot be
       // handed over is a bid nobody will ever be asked to pay for.
       setPhase('awaiting-payment');
-      await handOffToWallet(data.bidId, value, data.paymentToken ?? null);
+      await handOffToWallet(pending, data.paymentToken ?? null);
     } catch {
       setPhase('failed');
       setMessage('Network error. Check your connection and try again.');

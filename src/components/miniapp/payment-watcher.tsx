@@ -212,6 +212,9 @@ export function PaymentWatcher() {
       fee={pending.fee}
       currency={pending.currency}
       auctionTitle={pending.auctionTitle}
+      auctionCode={pending.auctionCode}
+      imageUrl={pending.imageUrl}
+      remainingBids={pending.remainingBids}
       message={message}
       onDone={() => setPending(null)}
     />

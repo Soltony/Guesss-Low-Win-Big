@@ -24,6 +24,17 @@ export interface PendingPayment {
   fee: number;
   currency: string;
   auctionTitle: string;
+  auctionCode: string;
+  /** Thumbnail, so the screen shows the thing being bid on rather than a name. */
+  imageUrl: string | null;
+  /**
+   * Bids this bidder has left on the auction once this one is counted, as the
+   * server computed it (`maxBidsPerUser - sequence`).
+   *
+   * Carried in the record rather than re-derived, because after a reload the
+   * panel that knew the bidder's usage is gone and this screen is all there is.
+   */
+  remainingBids: number | null;
   /** Epoch ms. A record older than the poll window is abandoned, not resumed. */
   startedAt: number;
 }
