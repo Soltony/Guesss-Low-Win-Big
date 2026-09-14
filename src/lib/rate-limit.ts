@@ -53,7 +53,7 @@ export const RATE_LIMITS = {
   /** Password change — authenticated, but a guessing oracle for the current password. */
   passwordChange: { limit: 10, windowMs: 15 * 60_000 },
   /** Super-app token exchange. Generous: a flaky webview retries on its own. */
-  sessionExchange: { limit: 30, windowMs: 5 * 60_000 },
+  sessionExchange: { limit: 500, windowMs: 5 * 60_000 },
   /** The test-login bypass, which mints a session without any credential. */
   testLogin: { limit: 10, windowMs: 10 * 60_000 },
   /** Bid placement, on top of the per-bidder throttle in settings. */

@@ -43,6 +43,19 @@ export type WinnerStatus = (typeof WINNER_STATUSES)[number];
 export const BIDDER_STATUSES = ['ACTIVE', 'SUSPENDED', 'BLOCKED'] as const;
 export type BidderStatus = (typeof BIDDER_STATUSES)[number];
 
+// How many bids a bidder has placed, bucketed for the Bidders admin filter
+// and its engagement cards. `min`/`max` are inclusive bounds on
+// Bidder.totalBids; a null `max` means no upper bound. The first three
+// buckets partition every bidder, so their counts add up to the total.
+export const BIDDER_BID_SEGMENTS = [
+  { value: 'none', label: 'Never bid (0)', min: 0, max: 0 },
+  { value: 'once', label: 'Bid once (1)', min: 1, max: 1 },
+  { value: 'repeat', label: 'Bid more than once (2+)', min: 2, max: null },
+  { value: '5plus', label: '5 or more', min: 5, max: null },
+  { value: '10plus', label: '10 or more', min: 10, max: null },
+] as const;
+export type BidderBidSegment = (typeof BIDDER_BID_SEGMENTS)[number]['value'];
+
 // Who an auction admits. RESTRICTED admits only the phone numbers on the
 // auction's uploaded participant list — see src/lib/eligibility.ts.
 export const ELIGIBILITY_MODES = ['OPEN', 'RESTRICTED'] as const;
