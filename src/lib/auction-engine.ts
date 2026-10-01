@@ -5,6 +5,7 @@ import { toNum } from './format';
 import { createReauction, decideReauction, isWinnerValid, releaseBidCredit } from './reauction';
 import { buildBidLedger, groupByAmount, publishBidLedger } from './bid-ledger';
 import { decryptBidAmount } from './bid-crypto';
+import { claimDeadlineFrom } from './claim-window';
 import type { AuctionStatus, ReauctionState, SettlementActor } from './types';
 
 /**
@@ -341,7 +342,7 @@ export async function settleAuction(
 
     if (winner) {
       const existing = await tx.winner.findUnique({ where: { auctionId } });
-      const claimDeadline = new Date(Date.now() + claimWindowHours * 60 * 60 * 1000);
+      const claimDeadline = claimDeadlineFrom(new Date(), claimWindowHours);
       if (!existing) {
         await tx.winner.create({
           data: {
@@ -567,7 +568,7 @@ export async function promoteRunnerUp(
         bidderId: next.bidderId,
         amount: next.amount,
         status: 'PENDING_CLAIM',
-        claimDeadline: new Date(Date.now() + claimWindowHours * 60 * 60 * 1000),
+        claimDeadline: claimDeadlineFrom(new Date(), claimWindowHours),
       },
     });
     await tx.auction.update({ where: { id: auctionId }, data: { winnerBidId: next.bidId } });

@@ -1,4 +1,5 @@
 import prisma from './prisma';
+import { applyClaimWindowToPendingWinners } from './claim-window';
 
 /**
  * Central configuration registry.
@@ -332,7 +333,8 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
   {
     key: 'winners.claimWindowHours',
     label: 'Claim window (hours)',
-    description: 'How long a winner has to claim their prize before it can be forfeited.',
+    description:
+      'How long a winner has to claim their prize before it can be forfeited. Changing it also moves the deadline of every winner who has not claimed yet.',
     category: 'winners',
     type: 'number',
     default: 72,
@@ -783,6 +785,12 @@ export async function setSetting(
     update: { value: JSON.stringify(value), updatedById },
   });
   invalidateSettingsCache();
+
+  // Handled here rather than by the callers so a change applied directly and
+  // one released through maker-checker both reach the waiting winners.
+  if (key === 'winners.claimWindowHours') {
+    await applyClaimWindowToPendingWinners(Number(value));
+  }
 }
 
 export function validateSettingValue(
