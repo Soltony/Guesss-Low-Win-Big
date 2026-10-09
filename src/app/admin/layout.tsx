@@ -9,7 +9,12 @@ import { hasPermission } from '@/lib/permissions';
 export const dynamic = 'force-dynamic';
 
 /** Routes that render their own full-page chrome instead of the admin shell. */
-const BARE_ROUTES = ['/admin/login', '/admin/change-password'];
+const BARE_ROUTES = [
+  '/admin/login',
+  '/admin/change-password',
+  '/admin/set-password',
+  '/admin/forgot-password',
+];
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const headerList = await headers();
@@ -21,8 +26,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // Each page still enforces its own permissions, and the proxy is the real guard.
   if (!pathname) return <>{children}</>;
 
-  // The login and change-password screens are reachable without a usable
-  // session, so they must not go through the shell's redirect.
+  // The sign-in and account screens are reachable without a usable session,
+  // so they must not go through the shell's redirect.
+  //
+  // A layout is not rendered again on a client-side navigation, so this choice
+  // is made once per page load and then kept. Moving between a bare screen and
+  // the console therefore has to be a full page load — plain <a> links, or
+  // `window.location` — or be followed by `router.refresh()`, as signing in and
+  // out are. A <Link> across that line lands in the console without its shell.
   if (BARE_ROUTES.some((route) => pathname.startsWith(route))) {
     return <>{children}</>;
   }

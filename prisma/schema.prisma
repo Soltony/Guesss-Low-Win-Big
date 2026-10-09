@@ -20,7 +20,11 @@ model User {
   fullName               String
   email                  String   @unique
   phoneNumber            String   @unique
-  password               String
+  // Null until the account holder chooses one through an emailed link: a new
+  // account waiting to be activated, or one an administrator has reset. An
+  // account without a password cannot be signed in to, so neither state needs
+  // a flag of its own. See src/lib/account-links.ts.
+  password               String?
   passwordChangeRequired Boolean  @default(true)
   status                 String   @default("ACTIVE") // ACTIVE | SUSPENDED | DISABLED
   roleId                 String
@@ -32,6 +36,7 @@ model User {
   updatedAt              DateTime @updatedAt
 
   sessions           Session[]
+  accountTokens      AccountToken[]
   createdChanges     PendingChange[]      @relation("ChangeCreatedBy")
   approvedChanges    PendingChange[]      @relation("ChangeApprovedBy")
   createdItems       Item[]               @relation("ItemCreatedBy")
@@ -75,6 +80,27 @@ model Session {
 
   @@index([userId])
   @@index([jti])
+}
+
+// The single-use links emailed to an admin account holder: one that activates
+// a new account, and one that sets a new password after a reset. Only the
+// SHA-256 of the token is stored, so a database read never yields a working
+// link — the token itself exists only in the email. One link per account is
+// live at a time; issuing another removes the rest.
+model AccountToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose    String // ACTIVATION | PASSWORD_RESET
+  tokenHash  String    @unique @db.NVarChar(64)
+  expiresAt  DateTime
+  usedAt     DateTime?
+  // The administrator who sent it; null when the holder asked for it from the
+  // sign-in page.
+  issuedById String?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model AuditLog {

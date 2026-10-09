@@ -28,13 +28,25 @@ export function containsMarkup(value: string): boolean {
 /** Nested bodies are shallow here; the cap is only so a hostile shape cannot spin. */
 const MAX_DEPTH = 8;
 
+const NOTHING_SKIPPED: ReadonlySet<string> = new Set();
+
 /**
  * Walks a parsed JSON body and names the first field carrying markup, so the
  * refusal can be shown under the input that caused it rather than as a
  * detached message. Returns null when the body is clean.
+ *
+ * `skip` names paths, in the form this returns them, that are not checked at
+ * all — a credential issued under somebody else's rules, which is forwarded
+ * or compared but never rendered.
  */
-export function findMarkupField(value: unknown, path = '', depth = 0): string | null {
+export function findMarkupField(
+  value: unknown,
+  path = '',
+  depth = 0,
+  skip: ReadonlySet<string> = NOTHING_SKIPPED
+): string | null {
   if (depth > MAX_DEPTH) return null;
+  if (path && skip.has(path)) return null;
 
   if (typeof value === 'string') {
     return containsMarkup(value) ? path || 'value' : null;
@@ -42,7 +54,7 @@ export function findMarkupField(value: unknown, path = '', depth = 0): string | 
 
   if (Array.isArray(value)) {
     for (let i = 0; i < value.length; i += 1) {
-      const found = findMarkupField(value[i], path ? `${path}[${i}]` : `[${i}]`, depth + 1);
+      const found = findMarkupField(value[i], path ? `${path}[${i}]` : `[${i}]`, depth + 1, skip);
       if (found) return found;
     }
     return null;
@@ -50,7 +62,7 @@ export function findMarkupField(value: unknown, path = '', depth = 0): string | 
 
   if (value && typeof value === 'object') {
     for (const [key, child] of Object.entries(value)) {
-      const found = findMarkupField(child, path ? `${path}.${key}` : key, depth + 1);
+      const found = findMarkupField(child, path ? `${path}.${key}` : key, depth + 1, skip);
       if (found) return found;
     }
     return null;

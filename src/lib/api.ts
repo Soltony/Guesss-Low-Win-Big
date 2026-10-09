@@ -130,6 +130,18 @@ export function parsePaging(req: NextRequest, defaultSize = 20) {
  */
 export const MAX_JSON_BODY_BYTES = 256 * 1024;
 
+export interface ReadJsonBodyOptions {
+  maxBytes?: number;
+  /**
+   * Fields, by the path the refusal would name (`password`,
+   * `settings.password`), that carry a credential issued under somebody
+   * else's rules — an SMTP password, say. A secret is forwarded or compared,
+   * never rendered, and refusing one because it happens to contain `<a` would
+   * leave the account behind it unusable. Every other field is still checked.
+   */
+  secretFields?: readonly string[];
+}
+
 /**
  * Reads a JSON body, or the response that refuses it.
  *
@@ -143,7 +155,7 @@ export const MAX_JSON_BODY_BYTES = 256 * 1024;
  */
 export async function readJsonBody<T = Record<string, any>>(
   req: NextRequest,
-  maxBytes = MAX_JSON_BODY_BYTES
+  { maxBytes = MAX_JSON_BODY_BYTES, secretFields = [] }: ReadJsonBodyOptions = {}
 ): Promise<T | NextResponse> {
   const tooLarge = () => jsonError('Request body is too large.', 413);
 
@@ -161,7 +173,7 @@ export async function readJsonBody<T = Record<string, any>>(
     return {} as T;
   }
 
-  const markupField = findMarkupField(parsed);
+  const markupField = findMarkupField(parsed, '', 0, new Set(secretFields));
   if (markupField) {
     return jsonError('HTML and script tags are not allowed here.', 400, {
       field: markupField,

@@ -1,22 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertCircle, Check, Loader2, X } from 'lucide-react';
+import { AlertCircle, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { cn } from '@/lib/utils';
-import { PASSWORD_MIN_LENGTH } from '@/lib/admin-users';
-
-const RULES = [
-  { label: `At least ${PASSWORD_MIN_LENGTH} characters`, test: (v: string) => v.length >= PASSWORD_MIN_LENGTH },
-  { label: 'A lowercase letter', test: (v: string) => /[a-z]/.test(v) },
-  { label: 'An uppercase letter', test: (v: string) => /[A-Z]/.test(v) },
-  { label: 'A number', test: (v: string) => /[0-9]/.test(v) },
-  { label: 'A symbol', test: (v: string) => /[^A-Za-z0-9]/.test(v) },
-];
+import { PasswordChecklist, passwordMeetsRules } from '@/components/admin/password-checklist';
 
 export function ChangePasswordForm({ required }: { required: boolean }) {
   const [form, setForm] = useState({
@@ -27,7 +18,7 @@ export function ChangePasswordForm({ required }: { required: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const allRulesPass = RULES.every((rule) => rule.test(form.newPassword));
+  const allRulesPass = passwordMeetsRules(form.newPassword);
   const matches = form.newPassword.length > 0 && form.newPassword === form.confirmPassword;
 
   const submit = async (event: React.FormEvent) => {
@@ -101,23 +92,7 @@ export function ChangePasswordForm({ required }: { required: boolean }) {
             />
           </div>
 
-          <ul className="space-y-1">
-            {RULES.map((rule) => {
-              const passed = rule.test(form.newPassword);
-              return (
-                <li
-                  key={rule.label}
-                  className={cn(
-                    'flex items-center gap-1.5 text-xs',
-                    passed ? 'text-success' : 'text-muted-foreground'
-                  )}
-                >
-                  {passed ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
-                  {rule.label}
-                </li>
-              );
-            })}
-          </ul>
+          <PasswordChecklist password={form.newPassword} />
 
           <div className="space-y-1.5">
             <Label htmlFor="confirmPassword">Confirm new password</Label>

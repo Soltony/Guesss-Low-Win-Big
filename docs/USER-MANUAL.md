@@ -460,8 +460,13 @@ A few things to know:
   so the form cannot be used to discover which addresses exist.
 - Repeated failures lock the account for a configurable period
   (**Settings → Security & Governance**).
-- New accounts, and accounts issued a one-time password, are forced to
-  `/admin/change-password` on first sign-in before they can go anywhere else.
+- **Forgot password?** under the password field emails a link to choose a new one.
+  It only goes to an account that can already sign in, and the screen reads the same
+  whether or not the address has an account.
+- New accounts have no password until their holder sets one through the activation
+  link emailed to them (see [Users](#26-users)). The seeded Super Admin is the only
+  account that starts with a password, and it is forced to `/admin/change-password`
+  on first sign-in.
 
 ---
 
@@ -977,16 +982,57 @@ tick does not add ~1,400 empty rows a day.
 *Console accounts. Super Admin only.*
 
 Each row shows the account's name, email and phone, its role, status and last sign-in,
-with three actions on the right: **edit** (pencil), **issue a one-time password** (key)
-and **Disable**. Your own row is marked *(you)* and cannot be password-reset from here —
-use **Change password** instead.
+with actions on the right: **edit** (pencil), **reset password** (key) or **send the
+link again** (paper plane), and **Disable**. Your own row is marked *(you)* and cannot
+be password-reset from here — use **Change password** instead.
+
+Nobody chooses a password for anybody else, and nothing about an admin account goes by
+SMS. Every account is activated, and every password reset, through a single-use link
+emailed to the account holder's own address. Set up the **Email** tab first.
 
 **To create a user:** select **Add user**, enter their name, email and phone, assign a
-role, and save. The platform issues a one-time password, which the account holder must
-change at first sign-in before they can reach anything else.
+role, and select **Create and send invitation**. The account holder receives an
+activation link, opens it, and chooses their password; until then the row shows
+*Awaiting activation* and the account cannot be signed in to. The link lasts 24 hours
+by default (**Settings → Security & Governance**). If it lapses, the row says
+*Invitation expired* — use **send the link again**.
+
+**To reset a password:** select the key icon and confirm. The account's current
+password stops working at once, every session it has is signed out, and a link to
+choose a new password is emailed to it (30 minutes by default). The row shows *Reset
+pending* until the holder uses it.
+
+If the link is opened in a browser where someone else is signed in to the console, they
+are signed out when the new password is set, so **Go to sign in** leads to the sign-in
+form for the account just set up.
+
+A message tells you each time a link was emailed — or, with email in testing mode,
+saved to a folder on the server. If the email could not be sent, a dialog shows why and
+offers **Send again** once email is put right. Sending a link again always replaces the
+previous one, and changing an account's email address withdraws any link sent to the
+old one.
 
 > **The last active Super Admin cannot be demoted, disabled or deleted.** The platform
 > refuses, so you cannot lock yourself out.
+
+### The Email tab
+
+The mail server the platform sends from. Settings are stored in the database and apply
+from the next email — no restart.
+
+- **Sending enabled** turns email on or off.
+- **Delivery mode** is either *Send through an SMTP server* or *Testing*, which saves
+  each message as an `.eml` file in a folder on the server instead of sending it.
+  Activation and reset emails land there with working links in them, so use it for
+  testing only.
+- **Quick setup** fills in the server, port and security for Gmail or Office 365.
+- The **password** is stored encrypted and is never shown again. Change the server or
+  the username and it has to be entered again.
+- **Send a test email** uses the values in the form, so you can try them before saving.
+
+For Gmail, turn on 2-Step Verification, create an **App password** under Google
+Account → Security → App passwords, and paste it as the password — Google refuses the
+normal account password. Every change and test is recorded in the audit log.
 
 ---
 
@@ -1192,6 +1238,17 @@ without the amounts.
 Until `SMS_API_URL` is configured, messages are logged rather than sent. Check
 **Notifications → Delivery log**: if the entries are there, the templates and triggers
 are working and only the transport is missing.
+
+**A new user never received their activation link.**
+Open **Users → Email** and check the status at the top, then **Send a test email** to the
+same address to confirm the mail server reaches it — and ask them to check their spam
+folder. Then use **send the link again** on their row: it issues a fresh link and stops
+the old one working.
+
+**"This link can't be used."**
+The link was already used, has lapsed, or was replaced by a newer one — only the latest
+link an account was sent works. A password reset link can be asked for again from
+**Forgot password?**; an invitation is sent again from the user's row.
 
 **An orange bar says the session is a test.**
 `ALLOW_TEST_LOGIN` is enabled. That is fine in UAT and must be off in production.

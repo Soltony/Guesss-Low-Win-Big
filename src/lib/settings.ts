@@ -672,6 +672,30 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     step: 1,
   },
   {
+    key: 'security.activationLinkHours',
+    label: 'Activation link lifetime (hours)',
+    description:
+      'How long the link emailed to a new admin account stays usable. Its holder chooses their password through it; once it lapses, send another from Users.',
+    category: 'security',
+    type: 'number',
+    default: 24,
+    min: 1,
+    max: 168,
+    step: 1,
+  },
+  {
+    key: 'security.passwordResetLinkMinutes',
+    label: 'Password reset link lifetime (minutes)',
+    description:
+      'How long a password reset link stays usable — one an administrator sent, or one the account holder asked for from the sign-in page.',
+    category: 'security',
+    type: 'number',
+    default: 30,
+    min: 5,
+    max: 1440,
+    step: 5,
+  },
+  {
     key: 'security.requireApprovalForPublish',
     label: 'Maker-checker on publishing auctions',
     description:

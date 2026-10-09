@@ -62,6 +62,17 @@ export const RATE_LIMITS = {
   paymentCallback: { limit: 120, windowMs: 60_000 },
   /** Maintenance tick — one scheduler, so anything more is someone probing. */
   cronTick: { limit: 30, windowMs: 60_000 },
+  /**
+   * Test emails. Each is a real sign-in to the mail server, and Gmail locks an
+   * account that fails too many of those in a row.
+   */
+  emailTest: { limit: 10, windowMs: 10 * 60_000 },
+  /** "Forgot password" requests from one caller — each one can send an email. */
+  passwordResetRequest: { limit: 10, windowMs: 15 * 60_000 },
+  /** Reset emails to one address, so the form cannot be used to flood somebody's inbox. */
+  passwordResetEmail: { limit: 3, windowMs: 60 * 60_000 },
+  /** Activation and reset links looked up or redeemed by one caller. */
+  accountLink: { limit: 30, windowMs: 15 * 60_000 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitName = keyof typeof RATE_LIMITS;

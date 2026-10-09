@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { securePick, secureShuffle } from './random';
+import { secureHex, securePick, secureShuffle } from './random';
 
 export const PASSWORD_MIN_LENGTH = 12;
 
@@ -121,7 +121,21 @@ export async function hashPassword(password: string) {
   return bcrypt.hash(password, 12);
 }
 
-export async function verifyPassword(password: string, hash: string) {
+/** A hash of a secret nobody holds, made once: what an account without a password is checked against. */
+let unmatchable: Promise<string> | null = null;
+
+/**
+ * Checks a password against a stored hash. An account with no password — one
+ * still waiting on its emailed link — never matches, but costs the same bcrypt
+ * work as one that does, so how long a sign-in takes cannot tell anybody which
+ * accounts are pending.
+ */
+export async function verifyPassword(password: string, hash: string | null) {
+  if (!hash) {
+    unmatchable ??= bcrypt.hash(secureHex(32), 12);
+    await bcrypt.compare(password, await unmatchable);
+    return false;
+  }
   return bcrypt.compare(password, hash);
 }
 
@@ -130,12 +144,13 @@ export function isValidEmail(email: string) {
 }
 
 /**
- * Temporary password issued when an admin creates or resets an account.
+ * Temporary password for the Super Admin the seed creates — the one account
+ * that exists before email can be set up to activate any other. Every account
+ * after it chooses its own through an emailed link (account-links.ts).
  *
- * Every draw comes from the CSPRNG: `Math.random()` here would mean the whole
- * stream of issued credentials could be reconstructed from a couple of observed
- * samples, and these are handed out precisely to people who have not yet proved
- * anything. The candidate is then put through the same policy the account will
+ * Every draw comes from the CSPRNG: `Math.random()` here would mean the
+ * credential could be reconstructed from a couple of observed samples, and it
+ * is handed to somebody who has not yet proved anything. The candidate is then put through the same policy the account will
  * be held to, and resampled if it fails — patching a rejected candidate in
  * place would bias exactly the positions the policy looks at.
  */

@@ -20,7 +20,9 @@ export async function POST(req: NextRequest) {
     return tooManyRequests(limit.retryAfterSeconds, 'Too many attempts. Please wait and retry.');
   }
 
-  const body = await readJsonBody(req);
+  const body = await readJsonBody(req, {
+    secretFields: ['currentPassword', 'newPassword', 'confirmPassword'],
+  });
   if (body instanceof NextResponse) return body;
   const currentPassword = String(body?.currentPassword || '');
   const newPassword = String(body?.newPassword || '');
