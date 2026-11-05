@@ -44,6 +44,15 @@ describe('findMarkupField', () => {
     expect(findMarkupField({ amount: 250, active: true, note: null })).toBeNull();
   });
 
+  it('leaves the named secret fields alone and checks everything else', () => {
+    const skip = new Set(['password', 'settings.password']);
+    expect(findMarkupField({ password: 'Ab<cd3f!', fromName: 'GuessLow' }, '', 0, skip)).toBeNull();
+    expect(findMarkupField({ settings: { password: '<x' } }, '', 0, skip)).toBeNull();
+    expect(findMarkupField({ password: '<x', fromName: '<b>x</b>' }, '', 0, skip)).toBe('fromName');
+    // Only the exact path is exempt, not a field that happens to share the name.
+    expect(findMarkupField({ other: { password: '<x' } }, '', 0, skip)).toBe('other.password');
+  });
+
   it('does not recurse without end', () => {
     const deep: any = {};
     let node = deep;

@@ -18,7 +18,10 @@ const GENERIC_FAILURE = 'Invalid email or password.';
 
 export async function POST(req: NextRequest) {
   const meta = clientMeta(req);
-  const body = await readJsonBody(req);
+  // The password is compared, never rendered, and people now choose their own
+  // on the set-password page — refusing one for containing `<a` would lock its
+  // owner out.
+  const body = await readJsonBody(req, { secretFields: ['password'] });
   if (body instanceof NextResponse) return body;
   const email = String(body?.email || '').trim().toLowerCase();
   const password = String(body?.password || '');
@@ -85,6 +88,9 @@ export async function POST(req: NextRequest) {
     return jsonError('This account is not active. Contact a system administrator.', 403);
   }
 
+  // An account still waiting on its activation or reset link has no password,
+  // and fails exactly as a wrong password does — same work, same counters — so
+  // this form cannot be used to find out which accounts are pending.
   const valid = await verifyPassword(password, user.password);
 
   if (!valid) {

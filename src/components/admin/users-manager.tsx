@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, KeyRound, Loader2, LockOpen, Pencil, Plus, RefreshCw } from 'lucide-react';
+import { AlertTriangle, KeyRound, Loader2, LockOpen, Pencil, Plus, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,6 +18,8 @@ import {
 import { StatusBadge } from '@/components/admin/status-badge';
 import { EmptyRow, TableCard } from '@/components/admin/data-shell';
 import { useToast } from '@/hooks/use-toast';
+import { describeMinutes } from '@/lib/email-templates';
+import type { AccountLinkPurpose, AccountLinkReport } from '@/lib/account-links';
 
 interface UserRow {
   id: string;
@@ -30,7 +32,14 @@ interface UserRow {
   passwordChangeRequired: boolean;
   lastLoginAt: string | null;
   locked: boolean;
+  /** False while the account waits on an emailed link — its invitation, or an administrator's reset. */
+  hasPassword: boolean;
+  /** The link such an account is waiting on, when it has one. */
+  pendingLink: { purpose: AccountLinkPurpose; expiresAt: string; expired: boolean } | null;
 }
+
+/** Whether email can carry the links: working, in testing mode, or off or not set up. */
+export type EmailStatus = 'ready' | 'testing' | 'unavailable';
 
 /** The server names the input its complaint belongs to; this puts it there. */
 function FieldError({ id, message }: { id: string; message?: string }) {
@@ -52,6 +61,46 @@ function invalidProps(id: string, message?: string) {
   };
 }
 
+function formatWhen(iso: string) {
+  return new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+/** What an account without a password is waiting on, at a glance. */
+function LinkBadge({ link }: { link: UserRow['pendingLink'] }) {
+  const reset = link?.purpose === 'PASSWORD_RESET';
+  if (link?.expired) {
+    return (
+      <Badge variant="destructive" className="mt-1">
+        {reset ? 'Reset link expired' : 'Invitation expired'}
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      variant="warning"
+      className="mt-1"
+      title={link ? `The link works until ${formatWhen(link.expiresAt)}` : undefined}
+    >
+      {reset ? 'Reset pending' : 'Awaiting activation'}
+    </Badge>
+  );
+}
+
+/** Said wherever a link is about to be sent while email cannot deliver it to a mailbox. */
+function EmailNotice({ status }: { status: EmailStatus }) {
+  if (status === 'ready') return null;
+  return (
+    <p className="flex gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+      <span>
+        {status === 'unavailable'
+          ? 'Email is off or not set up, so the link cannot be sent until it is — see the Email tab.'
+          : 'Email is in testing mode: the message is saved to a folder on the server instead of being sent.'}
+      </span>
+    </p>
+  );
+}
+
 const blank = {
   id: '',
   fullName: '',
@@ -67,12 +116,16 @@ export function UsersManager({
   currentUserId,
   canCreate,
   canUpdate,
+  emailStatus,
+  linkLifetimes,
 }: {
   users: UserRow[];
   roles: { id: string; name: string }[];
   currentUserId: string;
   canCreate: boolean;
   canUpdate: boolean;
+  emailStatus: EmailStatus;
+  linkLifetimes: { activationMinutes: number; resetMinutes: number };
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -98,46 +151,77 @@ export function UsersManager({
       return next;
     });
   };
+
   /**
-   * A one-time password is never returned to this screen — it goes to the
-   * account holder's phone. All we learn is whether the SMS left the building,
-   * and this holds the cases where it did not.
+   * Nobody's password passes through this screen: accounts are activated, and
+   * passwords reset, through links emailed to their holders. All it learns is
+   * whether the email went, and this holds the cases where it did not.
    */
-  const [deliveryFailure, setDeliveryFailure] = useState<{
+  const [linkFailure, setLinkFailure] = useState<{
     id: string;
     name: string;
-    recipient: string;
+    link: AccountLinkReport;
   } | null>(null);
-  const [retrying, setRetrying] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [confirmReset, setConfirmReset] = useState<UserRow | null>(null);
+  const [resetting, setResetting] = useState(false);
 
-  /** Returns whether the password reached its owner, so callers can react to a repeat failure. */
-  const reportDelivery = (
+  /** Returns whether the email went, so callers can react to a repeat failure. */
+  const reportLink = (
     account: { id: string; fullName: string },
     title: string,
-    delivery: { delivered: boolean; recipient: string }
+    link: AccountLinkReport
   ) => {
-    if (delivery.delivered) {
-      toast({ title, description: `One-time password sent by SMS to ${delivery.recipient}.` });
-      setDeliveryFailure(null);
+    if (link.sent) {
+      toast({
+        title,
+        description: link.savedTo
+          ? `Email is in testing mode, so the message was saved to ${link.savedTo} instead of being sent.`
+          : `${link.purpose === 'ACTIVATION' ? 'The activation' : 'A password reset'} link was ` +
+            `emailed to ${link.email}. It works until ${formatWhen(link.expiresAt)}.`,
+      });
+      setLinkFailure(null);
       return true;
     }
-    // Why the send failed is a server-side concern: the operator's next move is
-    // the same either way, and the provider's own error text is not something
-    // to put on screen.
-    setDeliveryFailure({ id: account.id, name: account.fullName, recipient: delivery.recipient });
+    setLinkFailure({ id: account.id, name: account.fullName, link });
     return false;
   };
 
   /**
-   * Nothing is stored to resend — the password exists only as a hash the moment
-   * it is issued. A retry therefore mints a fresh one-time password and sends
-   * that, which also invalidates whatever the failed attempt generated.
+   * Sends an account without a password the link it is waiting on — a fresh
+   * one, which also stops any earlier link from working.
    */
-  const retryDelivery = async () => {
-    if (!deliveryFailure) return;
-    setRetrying(true);
+  const sendLinkAgain = async (account: { id: string; fullName: string }) => {
+    setSending(true);
     try {
-      const response = await fetch(`/api/admin/users/${deliveryFailure.id}`, {
+      const response = await fetch(`/api/admin/users/${account.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'resend-link' }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        toast({ variant: 'destructive', title: 'Link not sent', description: data?.error });
+        return;
+      }
+
+      const sent = reportLink(account, 'Link sent', data.link);
+      if (!sent) {
+        toast({ variant: 'destructive', title: 'Still not sent', description: data.link?.error });
+      }
+      router.refresh();
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const resetPassword = async () => {
+    if (!confirmReset) return;
+    const account = confirmReset;
+    setResetting(true);
+    try {
+      const response = await fetch(`/api/admin/users/${account.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'reset-password' }),
@@ -145,25 +229,15 @@ export function UsersManager({
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        toast({ variant: 'destructive', title: 'Retry failed', description: data?.error });
+        toast({ variant: 'destructive', title: 'Reset failed', description: data?.error });
         return;
       }
 
-      const sent = reportDelivery(
-        { id: deliveryFailure.id, fullName: deliveryFailure.name },
-        'Password sent',
-        data.passwordDelivery
-      );
-      if (!sent) {
-        toast({
-          variant: 'destructive',
-          title: 'Still not delivered',
-          description: 'The SMS did not go out.',
-        });
-      }
+      setConfirmReset(null);
+      reportLink(account, 'Password reset', data.link);
       router.refresh();
     } finally {
-      setRetrying(false);
+      setResetting(false);
     }
   };
 
@@ -193,12 +267,14 @@ export function UsersManager({
         return;
       }
 
-      if (data.passwordDelivery) {
-        reportDelivery(
-          { id: data.id, fullName: form.fullName },
-          'User created',
-          data.passwordDelivery
-        );
+      if (data.link) {
+        reportLink({ id: data.id, fullName: form.fullName }, 'User created', data.link);
+      } else if (data.linkWithdrawn) {
+        toast({
+          title: 'User updated',
+          description:
+            "The link already emailed to this account no longer works. Send a new one from the user's row.",
+        });
       } else {
         toast({ title: 'User updated' });
       }
@@ -210,11 +286,11 @@ export function UsersManager({
     }
   };
 
-  const act = async (user: UserRow, action: string) => {
+  const unlock = async (user: UserRow) => {
     const response = await fetch(`/api/admin/users/${user.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action: 'unlock' }),
     });
     const data = await response.json().catch(() => ({}));
 
@@ -222,12 +298,7 @@ export function UsersManager({
       toast({ variant: 'destructive', title: 'Action failed', description: data?.error });
       return;
     }
-
-    if (data.passwordDelivery) {
-      reportDelivery(user, 'Password reset', data.passwordDelivery);
-    } else {
-      toast({ title: 'Done' });
-    }
+    toast({ title: 'Account unlocked' });
     router.refresh();
   };
 
@@ -243,9 +314,16 @@ export function UsersManager({
       toast({ variant: 'destructive', title: 'Update failed', description: data?.error });
       return;
     }
-    toast({ title: `Account is now ${status.toLowerCase()}` });
+    toast({
+      title: `Account is now ${status.toLowerCase()}`,
+      description: data.linkWithdrawn
+        ? 'The link it was waiting on no longer works. Send a new one after enabling it.'
+        : undefined,
+    });
     router.refresh();
   };
+
+  const failedPurpose = linkFailure?.link.purpose;
 
   return (
     <>
@@ -281,7 +359,8 @@ export function UsersManager({
                       <span className="ml-1.5 text-xs text-muted-foreground">(you)</span>
                     )}
                   </p>
-                  {user.passwordChangeRequired && (
+                  {!user.hasPassword && <LinkBadge link={user.pendingLink} />}
+                  {user.hasPassword && user.passwordChangeRequired && (
                     <Badge variant="warning" className="mt-1">
                       Temp password
                     </Badge>
@@ -326,15 +405,27 @@ export function UsersManager({
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
-                      {user.id !== currentUserId && (
+                      {user.hasPassword && user.id !== currentUserId && user.status === 'ACTIVE' && (
                         <Button
                           variant="ghost"
                           size="sm"
                           title="Reset password"
                           aria-label={`Reset password for ${user.fullName}`}
-                          onClick={() => act(user, 'reset-password')}
+                          onClick={() => setConfirmReset(user)}
                         >
                           <KeyRound className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {!user.hasPassword && user.status === 'ACTIVE' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Send the link again"
+                          aria-label={`Send ${user.fullName} the link again`}
+                          disabled={sending}
+                          onClick={() => sendLinkAgain(user)}
+                        >
+                          <Send className="h-3.5 w-3.5" />
                         </Button>
                       )}
                       {user.locked && (
@@ -343,7 +434,7 @@ export function UsersManager({
                           size="sm"
                           title="Unlock"
                           aria-label={`Unlock ${user.fullName}`}
-                          onClick={() => act(user, 'unlock')}
+                          onClick={() => unlock(user)}
                         >
                           <LockOpen className="h-3.5 w-3.5" />
                         </Button>
@@ -380,14 +471,18 @@ export function UsersManager({
             <DialogTitle>{form?.id ? 'Edit user' : 'New user'}</DialogTitle>
             <DialogDescription>
               {form?.id
-                ? 'Changing the role takes effect on the next request.'
-                : "A one-time password is generated and sent to the user's phone by SMS." +
-                  ' It is never shown here.'}
+                ? 'Changing the role takes effect on the next request. Changing the email address withdraws any link already sent to the old one.'
+                : 'An activation link is emailed to the new user, and they choose their own password — ' +
+                  `nobody else ever sees it. The link works for ${describeMinutes(
+                    linkLifetimes.activationMinutes
+                  )}.`}
             </DialogDescription>
           </DialogHeader>
 
           {form && (
             <form onSubmit={save} className="space-y-3">
+              {!form.id && <EmailNotice status={emailStatus} />}
+
               <div className="space-y-1.5">
                 <Label htmlFor="u-name">Full name</Label>
                 <Input
@@ -458,7 +553,7 @@ export function UsersManager({
                 </Button>
                 <Button type="submit" disabled={busy}>
                   {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Save
+                  {form.id ? 'Save' : 'Create and send invitation'}
                 </Button>
               </DialogFooter>
             </form>
@@ -467,48 +562,80 @@ export function UsersManager({
       </Dialog>
 
       <Dialog
-        open={deliveryFailure !== null}
-        onOpenChange={(open) => !open && !retrying && setDeliveryFailure(null)}
+        open={confirmReset !== null}
+        onOpenChange={(open) => !open && !resetting && setConfirmReset(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset the password for {confirmReset?.fullName}?</DialogTitle>
+            <DialogDescription>
+              Their current password stops working straight away and every session they have is
+              signed out. A link to choose a new one is emailed to {confirmReset?.email}, and works
+              for {describeMinutes(linkLifetimes.resetMinutes)}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <EmailNotice status={emailStatus} />
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmReset(null)} disabled={resetting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={resetPassword} disabled={resetting}>
+              {resetting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Reset and email link
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={linkFailure !== null}
+        onOpenChange={(open) => !open && !sending && setLinkFailure(null)}
       >
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-destructive" />
-              Password SMS not delivered
+              {failedPurpose === 'PASSWORD_RESET' ? 'Reset email not sent' : 'Activation email not sent'}
             </DialogTitle>
             <DialogDescription>
-              The one-time password for {deliveryFailure?.name} could not be sent to{' '}
-              {deliveryFailure?.recipient}. The account cannot be signed into until its owner has
-              it.
+              The {failedPurpose === 'PASSWORD_RESET' ? 'password reset' : 'activation'} link for{' '}
+              {linkFailure?.name} could not be emailed to {linkFailure?.link.email}.{' '}
+              {failedPurpose === 'PASSWORD_RESET'
+                ? 'Their old password has already stopped working.'
+                : 'The account exists, and cannot be signed in to until its holder uses a link.'}
             </DialogDescription>
           </DialogHeader>
 
-          <p className="rounded-lg border border-border bg-secondary/50 p-3 text-sm text-muted-foreground">
-            {canUpdate
-              ? 'Retrying issues a new one-time password and sends that. ' +
-                ''
-              : '.'}
+          {linkFailure?.link.error && (
+            <p className="break-words rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
+              {linkFailure.link.error}
+            </p>
+          )}
+          <p className="text-sm text-muted-foreground">
+            Put email right under the Email tab — a test message there confirms it works — then send
+            the link again.
           </p>
 
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDeliveryFailure(null)}
-              disabled={retrying}
-            >
+            <Button variant="outline" onClick={() => setLinkFailure(null)} disabled={sending}>
               Close
             </Button>
-            {/* Retry goes through the password-reset endpoint, so an operator
+            {/* Sending again goes through the update endpoint, so an operator
                 who may create accounts but not update them is not offered a
                 button the server would refuse. */}
-            {canUpdate && (
-              <Button onClick={retryDelivery} disabled={retrying}>
-                {retrying ? (
+            {canUpdate && linkFailure && (
+              <Button
+                onClick={() => sendLinkAgain({ id: linkFailure.id, fullName: linkFailure.name })}
+                disabled={sending}
+              >
+                {sending ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
-                  <RefreshCw className="mr-2 h-4 w-4" />
+                  <Send className="mr-2 h-4 w-4" />
                 )}
-                Retry
+                Send again
               </Button>
             )}
           </DialogFooter>

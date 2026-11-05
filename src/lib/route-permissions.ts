@@ -112,7 +112,12 @@ export const PERMISSION_EXEMPT_ROUTES = [
   '/admin/profile',
 ];
 
-export const ADMIN_PUBLIC_ROUTES = ['/admin/login'];
+/**
+ * Reachable without a session. The two account pages are where an emailed
+ * activation or reset link lands, and where a link is asked for — the people
+ * using them cannot sign in yet, which is the point.
+ */
+export const ADMIN_PUBLIC_ROUTES = ['/admin/login', '/admin/set-password', '/admin/forgot-password'];
 
 /** Longest full-segment prefix match, so /admin/bids never matches /admin/bidders. */
 export function findAdminRoute(path: string): AdminRoute | undefined {
@@ -145,6 +150,11 @@ export const API_MODULE_MAP: Record<string, string> = {
   '/api/admin/reports': 'reports',
   '/api/admin/audit-logs': 'audit-logs',
   '/api/admin/users': 'users',
+  // Email delivery is set up on the Users page, because what it carries is the
+  // activation and reset links for the accounts created there. Whoever can
+  // point it at a mail server can read those, so it takes that page's module —
+  // and with it the Super Admin constraint.
+  '/api/admin/email-settings': 'users',
   '/api/admin/roles': 'access-control',
   '/api/admin/settings': 'settings',
   '/api/admin/dashboard': 'dashboard',

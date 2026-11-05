@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { isGuardFailure, jsonError, readJsonBody, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
-import { generateTempPassword, hashPassword, isValidEmail } from '@/lib/admin-users';
-import { maskPhone, parseEthiopianMobile } from '@/lib/format';
-import { deliverTempPassword } from '@/lib/temp-password';
+import { isValidEmail } from '@/lib/admin-users';
+import { parseEthiopianMobile } from '@/lib/format';
+import { accountLinkReport, linkAuditDetails, sendAccountLink } from '@/lib/account-links';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,8 +55,7 @@ export async function POST(req: NextRequest) {
   }
   // An exact format, not a minimum length: the old check took anything from
   // nine digits upward and stripped whatever was not a digit, so an entry
-  // carrying text was stored as a number that can never be dialled — and this
-  // account is reachable only by SMS.
+  // carrying text was stored as a number that can never be dialled.
   if (!phoneNumber) {
     return jsonError(PHONE_ERROR, 400, { field: 'phoneNumber' });
   }
@@ -77,30 +76,22 @@ export async function POST(req: NextRequest) {
         });
   }
 
-  // The account starts with a one-time password that must be replaced at first
-  // sign-in, so no admin ever knows another admin's standing password.
-  const tempPassword = generateTempPassword();
-
+  // The account starts with no password at all, and nobody but its holder
+  // ever chooses one: the activation link emailed below is how they do. Until
+  // they have, the account cannot be signed in to.
   const created = await prisma.user.create({
     data: {
       fullName,
       email,
       phoneNumber,
-      password: await hashPassword(tempPassword),
-      passwordChangeRequired: true,
+      password: null,
+      passwordChangeRequired: false,
       status: 'ACTIVE',
       roleId,
     },
   });
 
-  // Straight to the account holder. The response below carries only whether
-  // it arrived, so the operator who created the account never reads it.
-  const delivery = await deliverTempPassword({
-    fullName,
-    phoneNumber,
-    password: tempPassword,
-    purpose: 'CREATED',
-  });
+  const link = await sendAccountLink(created, 'ACTIVATION', { issuedById: actor.id });
 
   await createAuditLog({
     actorId: actor.id,
@@ -108,26 +99,13 @@ export async function POST(req: NextRequest) {
     action: 'USER_CREATED',
     entity: 'User',
     entityId: created.id,
-    details: {
-      fullName,
-      email,
-      phoneNumber,
-      role: role.name,
-      passwordDelivered: delivery.delivered,
-      deliveryError: delivery.error ?? null,
-    },
+    details: { fullName, email, phoneNumber, role: role.name, ...linkAuditDetails(link) },
   });
 
+  // A failed send does not undo the account: it waits, inactive, until email
+  // is put right and the link is sent again from its row.
   return NextResponse.json(
-    {
-      id: created.id,
-      // Whether it arrived, and nothing else: the reason a send failed is for
-      // the server log and the audit row, not for the operator's screen.
-      passwordDelivery: {
-        delivered: delivery.delivered,
-        recipient: maskPhone(phoneNumber),
-      },
-    },
+    { id: created.id, link: accountLinkReport(link, email) },
     { status: 201 }
   );
 }

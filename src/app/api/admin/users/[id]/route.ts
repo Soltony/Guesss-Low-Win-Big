@@ -2,15 +2,36 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { isGuardFailure, jsonError, readJsonBody, requirePermission } from '@/lib/api';
 import { createAuditLog } from '@/lib/audit-log';
-import { generateTempPassword, hashPassword, isValidEmail } from '@/lib/admin-users';
+import { isValidEmail } from '@/lib/admin-users';
 import { revokeAllUserSessions } from '@/lib/session';
 import { SUPER_ADMIN_ROLE } from '@/lib/permissions';
-import { maskPhone, parseEthiopianMobile } from '@/lib/format';
-import { deliverTempPassword } from '@/lib/temp-password';
+import { parseEthiopianMobile } from '@/lib/format';
+import {
+  accountLinkReport,
+  linkAuditDetails,
+  sendAccountLink,
+  type AccountLinkPurpose,
+} from '@/lib/account-links';
 
 export const dynamic = 'force-dynamic';
 
 const PHONE_ERROR = 'Enter a valid Ethiopian mobile number, such as 0912345678.';
+
+/**
+ * Super Admins, other than this one, who could sign in right now. An invited
+ * account that has not set its password yet is ACTIVE but cannot, so it is
+ * not somebody to leave Access Control with.
+ */
+function otherUsableSuperAdmins(id: string) {
+  return prisma.user.count({
+    where: {
+      role: { name: SUPER_ADMIN_ROLE },
+      status: 'ACTIVE',
+      password: { not: null },
+      NOT: { id },
+    },
+  });
+}
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const guard = await requirePermission('users', 'update');
@@ -27,31 +48,28 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   if (action === 'reset-password') {
     // Self-reset is a lockout: the revoke below kills the actor's own session,
-    // and the one-time password only ever goes to the account holder by SMS, so
-    // the actor would be locked out of a password they never get to read.
+    // and the link to choose a new password goes to the account's mailbox, not
+    // to this screen.
     if (id === actor.id) {
       return jsonError('Use Change password to update your own password.', 409);
     }
+    if (target.status !== 'ACTIVE') {
+      return jsonError('Enable the account before resetting its password.', 409);
+    }
+    if (!target.password) {
+      return jsonError('This account has no password yet. Send its link again instead.', 409);
+    }
 
-    const tempPassword = generateTempPassword();
+    // A reset assumes the password may be known to someone else: it stops
+    // working now, every session is signed out, and the holder chooses a new
+    // one through the link emailed below.
     await prisma.user.update({
       where: { id },
-      data: {
-        password: await hashPassword(tempPassword),
-        passwordChangeRequired: true,
-        failedLoginCount: 0,
-        lockedUntil: null,
-      },
+      data: { password: null, passwordChangeRequired: false, failedLoginCount: 0, lockedUntil: null },
     });
-    // Any live session keeps working otherwise, defeating the reset.
     await revokeAllUserSessions(id);
 
-    const delivery = await deliverTempPassword({
-      fullName: target.fullName,
-      phoneNumber: target.phoneNumber,
-      password: tempPassword,
-      purpose: 'RESET',
-    });
+    const link = await sendAccountLink(target, 'PASSWORD_RESET', { issuedById: actor.id });
 
     await createAuditLog({
       actorId: actor.id,
@@ -59,20 +77,42 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       action: 'USER_PASSWORD_RESET',
       entity: 'User',
       entityId: id,
-      details: {
-        email: target.email,
-        passwordDelivered: delivery.delivered,
-        deliveryError: delivery.error ?? null,
-      },
+      details: { email: target.email, ...linkAuditDetails(link) },
     });
 
-    return NextResponse.json({
-      ok: true,
-      passwordDelivery: {
-        delivered: delivery.delivered,
-        recipient: maskPhone(target.phoneNumber),
-      },
+    return NextResponse.json({ ok: true, link: accountLinkReport(link, target.email) });
+  }
+
+  if (action === 'resend-link') {
+    if (target.password) {
+      return jsonError('This account already has a password. Use Reset password instead.', 409);
+    }
+    if (target.status !== 'ACTIVE') {
+      return jsonError('Enable the account before sending it a link.', 409);
+    }
+
+    // Whatever the account is waiting on — its invitation, or the reset an
+    // administrator started — is what it is sent again.
+    const last = await prisma.accountToken.findFirst({
+      where: { userId: id },
+      orderBy: { createdAt: 'desc' },
+      select: { purpose: true },
     });
+    const purpose: AccountLinkPurpose =
+      last?.purpose === 'PASSWORD_RESET' ? 'PASSWORD_RESET' : 'ACTIVATION';
+
+    const link = await sendAccountLink(target, purpose, { issuedById: actor.id });
+
+    await createAuditLog({
+      actorId: actor.id,
+      actorName: actor.fullName,
+      action: 'ACCOUNT_LINK_RESENT',
+      entity: 'User',
+      entityId: id,
+      details: { email: target.email, ...linkAuditDetails(link) },
+    });
+
+    return NextResponse.json({ ok: true, link: accountLinkReport(link, target.email) });
   }
 
   if (action === 'unlock') {
@@ -135,9 +175,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     // Removing the last Super Admin would lock everyone out of Access Control.
     if (target.role.name === SUPER_ADMIN_ROLE && role.name !== SUPER_ADMIN_ROLE) {
-      const remaining = await prisma.user.count({
-        where: { role: { name: SUPER_ADMIN_ROLE }, status: 'ACTIVE', NOT: { id } },
-      });
+      const remaining = await otherUsableSuperAdmins(id);
       if (remaining === 0) {
         return jsonError('This is the last active Super Admin — assign another one first.', 409);
       }
@@ -155,9 +193,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // unstuck, and it is the constraint that holds for every actor rather than
     // only for this one.
     if (status !== 'ACTIVE' && target.role.name === SUPER_ADMIN_ROLE) {
-      const remaining = await prisma.user.count({
-        where: { role: { name: SUPER_ADMIN_ROLE }, status: 'ACTIVE', NOT: { id } },
-      });
+      const remaining = await otherUsableSuperAdmins(id);
       if (remaining === 0) {
         return jsonError('This is the last active Super Admin and cannot be deactivated.', 409);
       }
@@ -173,14 +209,26 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   await prisma.user.update({ where: { id }, data });
 
+  // A link already emailed went to the old address, or belongs to an account
+  // that can no longer use it. Either way it stops working now. It is expired
+  // rather than deleted, so a later resend still knows what it was for.
+  let linkWithdrawn = false;
+  if (data.email || (data.status && data.status !== 'ACTIVE')) {
+    const { count } = await prisma.accountToken.updateMany({
+      where: { userId: id, usedAt: null, expiresAt: { gt: new Date() } },
+      data: { expiresAt: new Date() },
+    });
+    linkWithdrawn = count > 0;
+  }
+
   await createAuditLog({
     actorId: actor.id,
     actorName: actor.fullName,
     action: 'USER_UPDATED',
     entity: 'User',
     entityId: id,
-    details: { email: target.email, changed: Object.keys(data) },
+    details: { email: target.email, changed: Object.keys(data), linkWithdrawn },
   });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, linkWithdrawn });
 }

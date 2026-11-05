@@ -1,4 +1,5 @@
 import prisma from './prisma';
+import { applyClaimWindowToPendingWinners } from './claim-window';
 
 /**
  * Central configuration registry.
@@ -332,7 +333,8 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
   {
     key: 'winners.claimWindowHours',
     label: 'Claim window (hours)',
-    description: 'How long a winner has to claim their prize before it can be forfeited.',
+    description:
+      'How long a winner has to claim their prize before it can be forfeited. Changing it also moves the deadline of every winner who has not claimed yet.',
     category: 'winners',
     type: 'number',
     default: 72,
@@ -670,6 +672,30 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     step: 1,
   },
   {
+    key: 'security.activationLinkHours',
+    label: 'Activation link lifetime (hours)',
+    description:
+      'How long the link emailed to a new admin account stays usable. Its holder chooses their password through it; once it lapses, send another from Users.',
+    category: 'security',
+    type: 'number',
+    default: 24,
+    min: 1,
+    max: 168,
+    step: 1,
+  },
+  {
+    key: 'security.passwordResetLinkMinutes',
+    label: 'Password reset link lifetime (minutes)',
+    description:
+      'How long a password reset link stays usable — one an administrator sent, or one the account holder asked for from the sign-in page.',
+    category: 'security',
+    type: 'number',
+    default: 30,
+    min: 5,
+    max: 1440,
+    step: 5,
+  },
+  {
     key: 'security.requireApprovalForPublish',
     label: 'Maker-checker on publishing auctions',
     description:
@@ -783,6 +809,12 @@ export async function setSetting(
     update: { value: JSON.stringify(value), updatedById },
   });
   invalidateSettingsCache();
+
+  // Handled here rather than by the callers so a change applied directly and
+  // one released through maker-checker both reach the waiting winners.
+  if (key === 'winners.claimWindowHours') {
+    await applyClaimWindowToPendingWinners(Number(value));
+  }
 }
 
 export function validateSettingValue(

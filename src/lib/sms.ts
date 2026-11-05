@@ -3,8 +3,8 @@
  * environment, with no templates, no database and no logging of its own.
  *
  * `notifications.ts` layers templating and the delivery log on top of this for
- * ordinary bidder messaging. Anything whose body must not be written down —
- * one-time passwords above all — calls `sendSms` directly instead.
+ * bidder messaging, which is all SMS carries: admin accounts are activated and
+ * reset through emailed links (account-links.ts), never by text message.
  *
  * The recipient reaches this module in the stored 251XXXXXXXXX form and leaves it
  * as 0XXXXXXXXX: the gateway addresses subscribers the local way, and this is the
@@ -36,10 +36,9 @@ export function isSmsConfigured(): boolean {
 }
 
 /**
- * Posts one message to the provider. Unlike the notification pipeline this
- * reports a missing provider as a failure rather than quietly succeeding: a
- * caller that is delivering a credential has to know the message did not go
- * out, so it can fall back to something a human can act on.
+ * Posts one message to the provider. A missing provider is reported as a
+ * failure rather than a quiet success: whether that matters is the caller's
+ * decision, and the notification pipeline makes it by logging instead.
  */
 export async function sendSms(
   recipient: string,
@@ -68,8 +67,8 @@ export async function sendSms(
     `${LOG} POST ${url}`,
     JSON.stringify({
       to,
-      // The text itself is deliberately absent: a one-time password travels
-      // through here, and stdout is a log like any other.
+      // The text itself is deliberately absent: a bidder's message can carry
+      // their own bid amount, and stdout is a log like any other.
       textChars: text.length,
       authHeader: Boolean(process.env.SMS_API_KEY),
     })

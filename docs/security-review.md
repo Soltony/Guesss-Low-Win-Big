@@ -218,7 +218,6 @@ Findings belonging to other products in the tracker, or to a stack this app does
 | SEC-064 | Registration/login identifier mismatch — admins sign in by email, bidders by super-app identity |
 | SEC-006, 008, 046, 079 | `fast-xml-parser`, `tar`, `axios`, `jsPDF` — none are dependencies |
 | SEC-007, 062 | Vulnerable Next.js — already on 16.3.0, past the advisory range. `remotePatterns` is restricted to three hosts |
-| SEC-039, 040 | Nodemailer TLS — no mailer; notifications go over an SMS API |
 | SEC-051, 055, 077, 086 | IIS / ASP.NET version headers and the default welcome page — not this stack |
 | SEC-090 | Hard-coded .NET `JwtSettings.Secret`. The analogue is SEC-092, fixed |
 | SEC-089 | `connectionId` from `Math.random()` — no such identifier exists here |
@@ -289,51 +288,53 @@ password in the API response and rendered it in a dialog for the operator to cop
 and pass on by hand. That put a live credential in front of a second party and left
 its delivery to whatever channel that person happened to use.
 
-The credential now goes only to the account holder. `deliverTempPassword()`
-(`src/lib/temp-password.ts`) sends it by SMS to the account's own number and the
-routes return nothing but whether it arrived:
+The first fix sent the generated password to the account holder by SMS instead. It
+has since been replaced by a design with no generated password at all: nobody but the
+holder ever chooses an admin's password, and admin accounts no longer use SMS
+(`src/lib/account-links.ts`).
 
-```
-{ passwordDelivery: { delivered: true, recipient: "2519****44" } }
-```
+- **A new account starts with no password.** `User.password` is null, and the holder
+  is emailed an activation link through which they choose one. Until then the account
+  cannot be signed in to — it fails exactly as a wrong password does, after the same
+  bcrypt work, so sign-in cannot be used to find pending accounts.
+- **An administrator's reset** clears the password at once, signs out every session,
+  and emails a link to choose a new one. **Forgot password** on the sign-in page sends
+  the same kind of link but leaves the old password working until it is used. It is
+  offered only to accounts that can already sign in, answers identically for every
+  address, and does its lookup and send after the response has gone (`after()`), so
+  neither the reply nor its timing says whether an address has an account. It is
+  rate-limited per caller and per address, so it cannot be used to flood a mailbox.
+- **The link** carries a 256-bit token, of which only the SHA-256 is stored
+  (`AccountToken`). One link per account is live at a time; redeeming one is a
+  conditional update, so two racing requests cannot both use it; it expires (24 hours
+  for activation and 30 minutes for a reset by default, under Settings → Security &
+  Governance); and it stops working when the account is disabled or its email address
+  changes.
+- **The token stays out of logs.** It rides in the URL fragment
+  (`/admin/set-password#token=…`), which browsers never send to a server; the page
+  removes it from the address bar and posts it. Opening the page does not spend the
+  link, so a mail scanner that follows it cannot use up an invitation. The link is
+  built from the console address saved under Users → Email, never from the request's
+  Host header.
+- **Redeeming a link signs the browser out.** Whatever console session the browser
+  holds — the account's own, or another administrator's on a shared machine — is ended
+  when the password is set, so the next sign-in there is the account holder's.
+- **Nothing is printed instead.** The terminal fallback, which printed a temporary
+  password to the server log when delivery failed, went with the temporary password.
+  A failed email is reported to the Super Admin with its reason, and the link is sent
+  again once email works; the account waits, unusable, in the meantime.
+- **The audit trail records links, never tokens:** each one sent (`USER_CREATED`,
+  `USER_PASSWORD_RESET`, `ACCOUNT_LINK_RESENT`, `PASSWORD_RESET_REQUESTED`) with
+  whether it went and when it lapses, and each one redeemed (`ACCOUNT_ACTIVATED`,
+  `PASSWORD_RESET_COMPLETED`).
 
-Deliberate details:
+The seeded Super Admin is the only account that still starts with a generated
+password — printed once by the seed script and forced to change at first sign-in —
+because it is the one account that exists before email can be set up.
 
-- **It bypasses the template pipeline.** `notify()` writes every message body to
-  `NotificationLog`, readable by anyone holding `notifications.logs`. The transport
-  was split out into `src/lib/sms.ts` so a credential can be sent without being
-  stored — no template row, no log row.
-- **It ignores `notifications.enabled`.** That switch governs bidder messaging.
-  Silencing auction SMS should not make colleagues’ accounts unreachable.
-- **A missing provider is a failure, not a success.** `notify()` prints and returns
-  ok when `SMS_API_URL` is unset; `sendSms()` reports the failure, so the caller
-  knows the message did not go out.
-- **The failure reason never leaves the server.** The operator is told the SMS did
-  not go out and nothing more; why it failed goes to the server log and the audit
-  row. Even there the password is stripped from the provider’s error text first — a
-  provider that echoes the failed request back would otherwise reintroduce the exact
-  disclosure being fixed.
-- **The audit row records delivery, not the credential:** `passwordDelivered` and a
-  redacted `deliveryError`.
-
-**Retry.** The failure dialog offers a retry. There is nothing stored to resend — the
-password exists as a hash from the moment it is issued — so a retry runs the
-password-reset path: it mints a fresh one-time password, sends that, and invalidates
-whatever the failed attempt generated. The button is shown only to operators holding
-`users.update`, since that is the endpoint it calls.
-
-**Terminal fallback.** If the send fails, the password is printed to the server log
-with the reason and the recipient. This is a deliberate exception to "never log a
-temporary password": the alternative is an account nobody can sign into, recoverable
-only by a retry that may fail identically. It is reachable only by someone with server
-access, it is labelled as a fallback, and it tells whoever reads it to reset the
-account once SMS is restored. With no `SMS_API_URL` configured every issuance takes
-this path, which is why `.env.example` now says to configure the provider before going
-live.
-
-Covered by `src/lib/temp-password.test.ts`: the message carries the password, the
-fallback prints it, a thrown transport is treated as a failed send rather than
-rolling back a created account, and the password never survives in a returned error.
+Covered by `src/lib/account-links.test.ts` (token shape and uniqueness, hashing, the
+fragment URL, when a link is live), `src/lib/admin-users.test.ts` (an account with no
+password never matches) and `src/lib/email-templates.test.ts`.
 
 ### The phone number had no length or format rule (CWE-20, Low)
 
@@ -351,9 +352,10 @@ which returns the storable number or null:
 - **Exactly nine digits behind the 251 country code** — `isValidEthiopianPhone()`,
   the rule the bidder import (`isValidParticipantPhone`) already applied, promoted
   out of `eligibility-list.ts` so both use one definition.
-- **Mobile ranges only** (09 Ethio Telecom, 07 Safaricom). An admin account is
-  reachable only by the SMS carrying its one-time password, so a landline is an
-  account nobody can ever sign into.
+- **Mobile ranges only** (09 Ethio Telecom, 07 Safaricom). At the time an admin
+  account was reachable only by the SMS carrying its one-time password, so a landline
+  was an account nobody could sign into. Accounts are now activated by email, and the
+  rule stays so the number on file is one that can be texted.
 
 The message names the `phoneNumber` field, so it appears under the input. The input
 itself is `type="tel"` with `maxLength={13}` — room for `+251912345678` and not a
@@ -395,3 +397,42 @@ not rest on every future reader remembering to escape it.
 
 Covered by `src/lib/plain-text.test.ts` and two cases in
 `src/lib/eligibility-list.test.ts`.
+
+### Email delivery (SEC-039, SEC-040)
+
+These two were closed as not applicable while the app had no mailer. It has one
+now: **Users → Email** configures an SMTP server (`src/lib/email.ts`, sent with
+Nodemailer), used for exactly two things — the activation and password reset links
+above, and test messages. The findings' requirements, and how each is met:
+
+- **Require TLS.** STARTTLS is sent with `requireTLS`, so a server that does not
+  offer the upgrade is refused rather than used in clear; port 465 uses TLS from the
+  first byte (`secure: true`). Certificates are verified. The two weaker options an
+  internal mail server can need — no encryption, and a certificate accepted without
+  verification — are refused unless the deployment sets `SMTP_ALLOW_INSECURE=true`.
+  That is a decision for whoever runs the server: an admin session, hijacked or not,
+  cannot downgrade the channel account links travel over.
+- **App-specific credentials.** The screen walks through Gmail App Passwords and
+  says the account password will be refused.
+- **Protect the credential.** The SMTP password is sealed with AES-256-GCM under a key
+  derived (HKDF) from `SESSION_SECRET` and is never returned to the browser — the
+  screen learns only whether one is stored. It stays bound to the server and account
+  it was entered for: change either and it must be entered again, and the test
+  endpoint will not send it anywhere else. `SMTP_PASSWORD` in the environment remains
+  available for deployments that prefer it.
+- **No sensitive links or credentials in logs.** Reset and activation links never
+  reach a log: the token rides in the URL fragment, which no server sees, only its
+  hash is stored, and a failed send is reported with the token stripped out. Testing
+  mode writes emails — working links included — to a folder on the server, which
+  may not be inside `public/` or the upload folder, and the screen says it is for
+  testing only.
+
+Around it: the API is mapped to the `users` module, so it carries the Users page's
+Super Admin constraint; test sends are rate-limited (they are real sign-ins, and Gmail
+locks an account after a run of failures); every change and test is audited. The
+markup check in `readJsonBody()` gained a `secretFields` option so the password —
+forwarded, never rendered — may contain `<`; every other field is still checked.
+
+Covered by `src/lib/email.test.ts`, which drives the real transport against a local
+SMTP server (sign-in, a refused password, an unreachable server, and a plain-text
+setup refused before any connection), and `src/lib/email-templates.test.ts`.

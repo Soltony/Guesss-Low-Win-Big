@@ -122,6 +122,7 @@ See `.env.example` for the annotated list. The ones that matter:
 | `PAYMENT_URL`, `PAYMENT_KEY`, `ACCOUNT_NO`, `COMPANY_NAME`, `CALLBACK_URL` | Super-app payment gateway credentials for collecting bid fees |
 | `PAYMENT_CALLBACK_STRICT` | `true` rejects callbacks whose signature does not verify — see below |
 | `SMS_API_URL`, `SMS_API_KEY`, `SMS_SENDER_ID` | Outbound messaging. Unset ⇒ messages are logged, not sent |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM`, … | Starting values for **Users → Email**, which overrides them once saved. Admin accounts are activated and reset through emailed links, so nobody new can sign in until this works |
 | `CRON_SECRET` | Shared secret for `/api/cron/tick` |
 | `ALLOW_TEST_LOGIN` | `true` adds the authorization bypass to `/connect` — see below. Never set in production |
 
@@ -458,7 +459,7 @@ monitoring still sees every tick.
 | **Approvals** | Maker-checker queue with a field-level diff |
 | **Reports** | Fee income vs prize cost per auction, category breakdown, CSV export |
 | **Audit Logs** | Every privileged action, filterable, CSV export |
-| **Users / Access Control** | Accounts, one-time passwords, and the role permission matrix |
+| **Users / Access Control** | Accounts — invited, activated and reset through emailed links, so nobody but the holder ever chooses a password — the mail server those go through, and the role permission matrix |
 | **Settings** | ~40 platform settings, grouped and self-describing |
 
 Guardrails built into the console:
@@ -536,8 +537,9 @@ Highlights:
   defaults for round limit, duration, start delay, who may take part, and the
   turnout floor
 - `payments.*` — enable/disable fees, merchant details, timeout, refund flagging
-- `security.*` — login lockout, and maker-checker toggles for publishing,
-  settings, and settlement
+- `security.*` — login lockout, how long activation and password reset links
+  stay usable, and maker-checker toggles for publishing, settings, and
+  settlement
 
 Settings marked **sensitive** route through maker-checker when
 `security.requireApprovalForSettings` is on. Auction-level values always
@@ -612,14 +614,17 @@ Before launch:
 4. Confirm the payment callback signature format, then set
    `PAYMENT_CALLBACK_STRICT=true`.
 5. Set `ALLOWED_ORIGIN` to the real mini-app origin.
-6. Sign in as the seeded Super Admin, change the password, create real
-   accounts, and disable the seed account.
+6. Sign in as the seeded Super Admin and change the password. Set up a mail
+   server under **Users → Email** and send a test first: every other account
+   is activated through a link emailed to its holder. Then invite the real
+   accounts, and once a second Super Admin has activated theirs, disable the
+   seed account.
 7. Schedule `/api/cron/tick` every minute with a strong `CRON_SECRET`, or run
    `npm run run:worker` as a supervised process. Settlement falls back to the
    read paths without either, but only while the app is being used — schedule
    one so an auction that ends overnight settles overnight.
-8. Configure the SMS provider — until `SMS_API_URL` is set, messages are only
-   logged.
+8. Configure the SMS provider for bidder messages — until `SMS_API_URL` is
+   set, they are only logged.
 9. Use `prisma migrate` rather than `db push` once schema history matters.
 10. Review `frame-ancestors` in `src/proxy.ts`. It is currently `*` so the super
    app can embed the mini-app in a webview; tighten it to the super-app origin

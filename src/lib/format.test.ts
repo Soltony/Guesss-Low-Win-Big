@@ -3,10 +3,25 @@ import {
   isEthiopianMobile,
   isValidEthiopianPhone,
   looksLikePhoneNumber,
+  maskEmail,
   normalizePhone,
   parseEthiopianMobile,
   toLocalPhone,
 } from './format';
+
+describe('maskEmail', () => {
+  it('keeps enough of the address to recognise it', () => {
+    expect(maskEmail('selam@example.com')).toBe('se***@example.com');
+    expect(maskEmail('ab@example.com')).toBe('a***@example.com');
+    expect(maskEmail('a@example.com')).toBe('***@example.com');
+  });
+
+  it('handles nothing, and things that are not addresses', () => {
+    expect(maskEmail(null)).toBe('—');
+    expect(maskEmail('')).toBe('—');
+    expect(maskEmail('not-an-address')).toBe('***');
+  });
+});
 
 describe('normalizePhone', () => {
   it('brings the usual local forms to 251XXXXXXXXX', () => {

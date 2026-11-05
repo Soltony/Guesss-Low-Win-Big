@@ -50,6 +50,15 @@ export function maskPhone(phone: string | null | undefined) {
   return `${digits.slice(0, 4)}${'*'.repeat(Math.max(0, digits.length - 6))}${digits.slice(-2)}`;
 }
 
+/** `selam@example.com` → `se***@example.com`: enough to recognise, not to harvest. */
+export function maskEmail(email: string | null | undefined) {
+  if (!email) return '—';
+  const at = email.lastIndexOf('@');
+  if (at < 1) return '***';
+  const local = email.slice(0, at);
+  return `${local.slice(0, Math.min(2, local.length - 1))}***${email.slice(at)}`;
+}
+
 /**
  * A normalized Ethiopian number: the 251 country code and exactly nine more
  * digits. Anything shorter is truncated, anything longer is two numbers that
@@ -63,9 +72,8 @@ export function isValidEthiopianPhone(normalized: string): boolean {
 /**
  * Narrower still: a line an SMS can actually reach. Ethiopian mobile ranges
  * open 09 (Ethio Telecom) or 07 (Safaricom); everything else in the numbering
- * plan is a landline. Anywhere a number is the only way to reach a person -
- * an admin receiving a one-time password, for instance - a landline is not a
- * usable answer.
+ * plan is a landline. Anywhere a number may be texted - a bidder's messages,
+ * for instance - a landline is not a usable answer.
  */
 export function isEthiopianMobile(normalized: string): boolean {
   return /^251[79][0-9]{8}$/.test(normalized);

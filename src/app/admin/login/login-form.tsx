@@ -18,13 +18,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-
-/**
- * Filled fields rather than outlined ones: the panel is already a plain white
- * surface, so the input's own tint is what tells you where to type.
- */
-const FIELD =
-  'h-12 rounded-xl border-transparent bg-secondary pl-11 text-[15px] transition-colors focus-visible:bg-card focus-visible:border-primary/40';
+import { AUTH_FIELD as FIELD } from './auth-screen';
 
 /**
  * Sign-in has four visible states, not two. Collapsing them into a boolean is
@@ -236,9 +230,19 @@ export function LoginForm({ notice }: { notice?: string | null }) {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="password" className="text-[13px]">
-              Password
-            </Label>
+            <div className="flex items-baseline justify-between gap-3">
+              <Label htmlFor="password" className="text-[13px]">
+                Password
+              </Label>
+              {/* A full page load, like every link between the sign-in
+                  screens — see the note in src/app/admin/layout.tsx. */}
+              <a
+                href="/admin/forgot-password"
+                className="text-[13px] font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              >
+                Forgot password?
+              </a>
+            </div>
             <div className="relative">
               <Lock className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -280,7 +284,7 @@ export function LoginForm({ notice }: { notice?: string | null }) {
         </button>
 
         <p className="mt-6 border-t border-border pt-5 text-center text-xs leading-relaxed text-muted-foreground">
-          Locked out or need an account? Contact a system administrator.
+          Need an account? A system administrator sends you an invitation by email.
         </p>
       </form>
     </div>
