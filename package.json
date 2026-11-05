@@ -48,14 +48,14 @@
     "file-saver": "^2.0.5",
     "jose": "^5.8.0",
     "lucide-react": "^0.475.0",
-    "next": "16.3.3",
+    "next": "16.4.5",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "recharts": "^2.15.1",
     "tailwind-merge": "^3.0.1",
     "tailwindcss-animate": "^1.0.7",
     "tsx": "^4.21.0",
-    "zod": "^3.24.2"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -74,5 +74,11 @@
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
+  },
+  "allowScripts": {
+    "prisma@5.22.0": true,
+    "@prisma/client@5.22.0": true,
+    "@prisma/engines@5.22.0": true,
+    "esbuild@0.28.2": true
   }
 }
